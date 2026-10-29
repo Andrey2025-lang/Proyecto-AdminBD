@@ -52,11 +52,29 @@ function saveRecord(PDO $db, string $table, string $pk, array $data, int $id): v
     }
 }
 
+function requireUnique(PDO $db, string $table, string $pk, string $column, string $value, int $id, string $message): void
+{
+    // Identificadores definidos por el servidor. La comparación usa la misma
+    // intercalación de SQL Server que las restricciones UNIQUE de las tablas.
+    if (rows($db, "SELECT TOP (1) $pk FROM $table WHERE $column = ? AND $pk <> ?", [$value, $id])) {
+        throw new InvalidArgumentException($message);
+    }
+}
+
+function requireReference(PDO $db, string $table, string $pk, int $id, string $message): void
+{
+    if (!rows($db, "SELECT $pk FROM $table WHERE $pk = ?", [$id])) {
+        throw new InvalidArgumentException($message);
+    }
+}
+
 function action(PDO $db): string
 {
     $action = $_POST['action'] ?? '';
     if ($action === 'category') {
-        saveRecord($db, 'RP01_CATEGORIAS', 'id_categoria', ['nombre' => textInput('nombre', 100)], 0);
+        $name = textInput('nombre', 100);
+        requireUnique($db, 'RP01_CATEGORIAS', 'id_categoria', 'nombre', $name, 0, 'Ya existe una categoría con ese nombre. Selecciónela en la lista.');
+        saveRecord($db, 'RP01_CATEGORIAS', 'id_categoria', ['nombre' => $name], 0);
         return 'Categoría registrada.';
     }
     if ($action === 'part') {
@@ -69,6 +87,10 @@ function action(PDO $db): string
             'precio_venta' => decimal(centsInput('precio_venta')), 'stock_minimo' => integerInput('stock_minimo', 0),
             'estado' => $status,
         ];
+        requireUnique($db, 'RP03_REPUESTOS', 'id_repuesto', 'codigo_barras', $data['codigo_barras'], $id,
+            'Ya existe un repuesto con ese código de barras. Use otro código o edite el repuesto existente.');
+        requireReference($db, 'RP01_CATEGORIAS', 'id_categoria', $data['id_categoria'],
+            'La categoría seleccionada no existe. Seleccione una categoría válida.');
         if ($id === 0) $data['stock_actual'] = 0;
         saveRecord($db, 'RP03_REPUESTOS', 'id_repuesto', $data, $id);
         return 'Repuesto guardado. Las existencias se modifican mediante compras y ventas.';
@@ -81,8 +103,13 @@ function action(PDO $db): string
             : ['nombre_empresa' => textInput('nombre_empresa', 150), 'contacto' => textInput('contacto', 100)];
         $data['telefono'] = textInput('telefono', 20);
         $data['email'] = $email === '' ? null : $email;
+        $id = integerInput('id', 0);
+        if ($action === 'client') {
+            requireUnique($db, 'RP05_CLIENTES', 'id_cliente', 'cedula', $data['cedula'], $id,
+                'Ya existe un cliente con esa cédula. Use otra cédula o edite el cliente existente.');
+        }
         saveRecord($db, $action === 'client' ? 'RP05_CLIENTES' : 'RP02_PROVEEDORES',
-            $action === 'client' ? 'id_cliente' : 'id_proveedor', $data, integerInput('id', 0));
+            $action === 'client' ? 'id_cliente' : 'id_proveedor', $data, $id);
         return 'Registro guardado correctamente.';
     }
     if ($action !== 'sale' && $action !== 'purchase') throw new InvalidArgumentException('Operación desconocida.');
@@ -93,6 +120,8 @@ function action(PDO $db): string
         $parts = rows($db, 'SELECT * FROM RP03_REPUESTOS WITH (UPDLOCK, HOLDLOCK) WHERE id_repuesto = ? AND estado = ?', [$partId, 'ACTIVO']);
         if (!$parts) throw new InvalidArgumentException('Seleccione un repuesto activo.');
         if ($action === 'sale') {
+            $client = integerInput('id_cliente');
+            requireReference($db, 'RP05_CLIENTES', 'id_cliente', $client, 'El cliente seleccionado no existe. Seleccione un cliente válido.');
             $seller = integerInput('id_vendedor');
             if (!rows($db, "SELECT usuario_id FROM RP13_USUARIOS WHERE usuario_id = ? AND estado = 'ACTIVO' AND nombre_usuario <> 'sistema'", [$seller])) {
                 throw new InvalidArgumentException('Seleccione un vendedor activo.');
@@ -101,13 +130,15 @@ function action(PDO $db): string
             if ($quantity > (int)$parts[0]['stock_actual']) throw new InvalidArgumentException('Existencias insuficientes para completar la venta.');
             if ((float)$price * $quantity > 99999999.99) throw new InvalidArgumentException('El total excede la capacidad del modelo de datos.');
             run($db, 'EXEC sp_ProcesarVentaTransaccional @id_cliente=?, @id_vendedor=?, @id_repuesto=?, @cantidad=?, @precio_unitario=?',
-                [integerInput('id_cliente'), $seller, $partId, $quantity, $price]);
+                [$client, $seller, $partId, $quantity, $price]);
         } else {
+            $supplier = integerInput('id_proveedor');
+            requireReference($db, 'RP02_PROVEEDORES', 'id_proveedor', $supplier, 'El proveedor seleccionado no existe. Seleccione un proveedor válido.');
             $cents = centsInput('precio_unitario');
             if ($cents * $quantity > 9999999999) throw new InvalidArgumentException('El total excede la capacidad del modelo de datos.');
             if ((int)$parts[0]['stock_actual'] + $quantity > 2147483647) throw new InvalidArgumentException('La cantidad excede la capacidad del inventario.');
             $total = decimal($cents * $quantity);
-            $purchase = rows($db, "INSERT INTO RP09_COMPRAS (id_proveedor, total, estado) OUTPUT INSERTED.id_compra VALUES (?, ?, 'RECIBIDO')", [integerInput('id_proveedor'), $total]);
+            $purchase = rows($db, "INSERT INTO RP09_COMPRAS (id_proveedor, total, estado) OUTPUT INSERTED.id_compra VALUES (?, ?, 'RECIBIDO')", [$supplier, $total]);
             run($db, 'INSERT INTO RP10_DETALLE_COMPRAS (id_compra,id_repuesto,cantidad,precio_unitario,subtotal) VALUES (?,?,?,?,?)',
                 [$purchase[0]['id_compra'], $partId, $quantity, decimal($cents), $total]);
         }

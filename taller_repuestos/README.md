@@ -19,6 +19,8 @@ Se verificaron las siete pantallas contra SQL Server y el flujo real desde HTTP:
 - Ventas: precio obtenido del catálogo en el servidor, vendedor seleccionado, procedimiento almacenado y control de existencias.
 - Listado y detalle de compras y ventas, existencias e historial de entradas y salidas.
 - Formularios con validación, consultas parametrizadas, escape HTML y token CSRF.
+- Comprobación previa de códigos de barras y cédulas repetidos, incluso al editar (se permite conservar el valor del propio registro). SQL Server mantiene sus restricciones UNIQUE como protección final ante peticiones simultáneas.
+- Categorías repetidas rechazadas por la aplicación y referencias a categorías, clientes y proveedores comprobadas antes de guardar. Los precios, cantidades, longitudes y estados también se validan en el servidor.
 - Vista previa **de solo lectura con datos ilustrativos** para revisar el diseño sin una conexión.
 
 ## 1. Requisitos
@@ -125,10 +127,15 @@ taller_repuestos/
 Get-ChildItem '.\taller_repuestos' -Filter *.php -Recurse | ForEach-Object { & 'C:\php\php.exe' -l $_.FullName }
 & 'C:\php\php.exe' '.\taller_repuestos\tests\validaciones.php'
 & 'C:\php\php.exe' '.\taller_repuestos\tests\pantallas.php'
+& 'C:\php\php.exe' '.\taller_repuestos\tests\catalogos.php'
 node --check '.\taller_repuestos\assets\app.js'
 ```
 
 Para una prueba integral hace falta la instancia real: comprobar compras, ventas, rechazos por stock insuficiente y movimientos con el escenario anterior. Si falla una consulta, revise la salida del servidor PHP; los errores internos no se muestran al usuario.
+
+`tests/catalogos.php` requiere la conexión SQL Server configurada. Prueba altas y ediciones, códigos y cédulas duplicados, categorías inválidas y validaciones de campos. Crea sus propios registros dentro de una transacción y los revierte al terminar, sin conservar datos de prueba ni cambiar las existencias actuales. Las identidades de SQL Server pueden avanzar aunque la transacción se revierta; los saltos en los ID son normales.
+
+Los errores de restricciones de SQL Server se interpretan por su código nativo (`PDOException::errorInfo[1]`), no buscando números en el texto del mensaje. Así, un código duplicado muestra «Ya existe un repuesto con ese código de barras», en lugar de un error genérico de conexión.
 
 También se incluye una prueba integral repetible que utiliza HTTP y consulta los resultados con `sqlcmd`:
 

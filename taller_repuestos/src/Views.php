@@ -110,7 +110,9 @@ function partsPage(PDO $db): void
     <?php endforeach ?></tbody></table></div></section>
     <aside><section class="panel-card form-panel"><?php panelTitle($part ? 'Editar repuesto' : 'Nuevo repuesto', 'Las nuevas referencias comienzan con stock cero.');
     startForm('repuestos', 'part'); ?><input type="hidden" name="id" value="<?= (int)($part['id_repuesto'] ?? 0) ?>">
-    <?php input('Código de barras', 'codigo_barras', $part['codigo_barras'] ?? '', 'text', 'required maxlength="20"');
+    <?php input('Código de barras (único)', 'codigo_barras', $part['codigo_barras'] ?? '', 'text', 'required maxlength="20"'); ?>
+    <p class="help mb-4">No puede repetirse en otro repuesto. Admite hasta 20 caracteres, incluidos códigos alfanuméricos.</p>
+    <?php
     input('Nombre del repuesto', 'nombre', $part['nombre'] ?? '', 'text', 'required maxlength="150"');
     options('Categoría', 'id_categoria', $cats, 'id_categoria', 'nombre', $part['id_categoria'] ?? ''); ?>
     <div class="form-grid"><?php input('Precio de compra', 'precio_compra', $part['precio_compra'] ?? '0.00', 'number', 'min="0" max="99999999.99" step="0.01" required'); input('Precio de venta', 'precio_venta', $part['precio_venta'] ?? '0.00', 'number', 'min="0" max="99999999.99" step="0.01" required'); ?></div>

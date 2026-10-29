@@ -41,3 +41,35 @@ function run(PDO $db, string $sql, array $params = []): void
     while ($stmt->nextRowset()) {}
     $stmt->closeCursor();
 }
+
+function databaseErrorMessage(Throwable $error, string $action): string
+{
+    // PDO_SQLSRV entrega el número nativo en errorInfo[1]; no necesariamente
+    // aparece en getMessage(). UNIQUE sigue protegiendo ante envíos simultáneos.
+    $code = $error instanceof PDOException ? (int)($error->errorInfo[1] ?? 0) : 0;
+    if (in_array($code, [2601, 2627], true)) {
+        return match ($action) {
+            'part' => 'Ya existe un repuesto con ese código de barras. Use otro código o edite el repuesto existente.',
+            'client' => 'Ya existe un cliente con esa cédula. Use otra cédula o edite el cliente existente.',
+            default => 'Ya existe un registro con esos datos únicos. Revise la información.',
+        };
+    }
+    return match ($code) {
+        547 => match ($action) {
+            'part' => 'La categoría seleccionada ya no está disponible. Seleccione una categoría válida.',
+            'sale' => 'El cliente, vendedor o repuesto seleccionado ya no está disponible. Revise la selección.',
+            'purchase' => 'El proveedor o repuesto seleccionado ya no está disponible. Revise la selección.',
+            default => 'Los datos no cumplen las relaciones o restricciones de la base de datos.',
+        },
+        515 => 'Faltan datos obligatorios. Complete todos los campos requeridos.',
+        8152, 2628 => 'Uno de los textos supera la longitud permitida. Revise los campos.',
+        8115 => 'Uno de los importes o cantidades supera el máximo permitido.',
+        1205 => 'Otra operación estaba modificando los mismos datos. Intente nuevamente.',
+        50001, 50004 => 'Existencias insuficientes para completar la venta.',
+        50002 => 'Debe existir el usuario técnico sistema para registrar compras.',
+        50003 => 'La cantidad o el precio indicado no es válido.',
+        default => in_array($action, ['sale', 'purchase'], true)
+            ? 'No se pudo completar la operación. Verifique la conexión e intente nuevamente; no se guardaron cambios parciales en la compra o venta.'
+            : 'No se pudo guardar el registro. Verifique los datos y la conexión e intente nuevamente.',
+    };
+}

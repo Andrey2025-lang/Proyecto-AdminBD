@@ -1,6 +1,7 @@
 <?php
 declare(strict_types=1);
 require dirname(__DIR__) . '/src/Actions.php';
+require dirname(__DIR__) . '/src/Database.php';
 require dirname(__DIR__) . '/src/Views.php';
 $passed = 0;
 function check(bool $condition, string $label): void
@@ -40,4 +41,14 @@ dashboardView(['partes'=>4,'bajos'=>2,'vendido'=>0,'clientes'=>1], [], []);
 $html = ob_get_clean();
 check(str_contains($html, 'Tu taller, en movimiento.'), 'renderizado de inicio');
 check(str_contains($html, 'No hay alertas de existencias.'), 'estado vacío');
+foreach ([2601, 2627] as $code) {
+    $exception = new PDOException('Mensaje del controlador sin número nativo.');
+    $exception->errorInfo = ['23000', $code, 'Duplicate key'];
+    check(str_contains(databaseErrorMessage($exception, 'part'), 'código de barras'), 'error UNIQUE ' . $code . ' desde errorInfo');
+    check(str_contains(databaseErrorMessage($exception, 'client'), 'cédula'), 'error de cédula ' . $code . ' desde errorInfo');
+}
+$exception = new PDOException('Foreign key');
+$exception->errorInfo = ['23000', 547, 'Foreign key'];
+check(str_contains(databaseErrorMessage($exception, 'part'), 'categoría'), 'error de categoría específico');
+check(!str_contains(databaseErrorMessage(new RuntimeException('Error interno'), 'part'), 'compras o ventas'), 'error de catálogo sin mensaje de transacciones');
 echo $passed . ' comprobaciones correctas.' . PHP_EOL;

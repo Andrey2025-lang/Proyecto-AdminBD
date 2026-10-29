@@ -46,10 +46,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         http_response_code(422);
     } catch (Throwable $e) {
         error_log((string)$e);
-        $message = $e->getMessage();
-        $error = str_contains($message, '2601') || str_contains($message, '2627') ? 'Ya existe un registro con ese código o cédula.'
-            : (str_contains($message, '50002') ? 'Debe existir el usuario técnico sistema. Ejecute el script de datos de prueba.'
-            : 'No se pudo completar la operación. Verifique los datos y la conexión; no se guardaron cambios parciales en compras o ventas.');
+        $error = databaseErrorMessage($e, is_string($_POST['action'] ?? null) ? $_POST['action'] : '');
         http_response_code(422);
     }
 }

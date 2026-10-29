@@ -107,7 +107,7 @@ print('OK: venta con stock insuficiente rechazada sin cambios parciales')
 post('ventas', {'action':'sale', 'id_repuesto':part, 'cantidad':1,
                'id_cliente':2147483647, 'id_vendedor':seller}, 422)
 assert snapshot() == after_sale
-print('OK: error de clave foranea revierte toda la venta')
+print('OK: cliente inexistente rechazado sin cambios en la venta ni el inventario')
 
 for page in ['inicio', 'compras', 'ventas', 'inventario']:
     get(page)
