@@ -1,0 +1,19 @@
+# Configuraciones y credenciales locales
+**/config.php
+miniframework_cech/miniframework_cech/conexion.php
+.env
+.env.*
+!.env.example
+
+# Respaldos y archivos físicos de SQL Server no se publican en Git
+*.bak
+*.mdf
+*.ndf
+*.ldf
+
+# Archivos temporales
+*.log
+__pycache__/
+*.pyc
+.DS_Store
+Thumbs.db
