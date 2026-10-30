@@ -67,8 +67,8 @@ function filterSelect(string $name, string $label, array $choices, $selected): v
 function searchForm(string $page, string $placeholder, array $categories=[], array $sellers=[]): array
 {
     $f=listFilters();
-    echo '<form class="filter-bar" method="get" action="index.php" hx-get="index.php" hx-target="#content" hx-push-url="true"><input type="hidden" name="page" value="'.$page.'">';
-    echo '<label class="filter-field filter-search"><span>Buscar</span><input class="input" type="search" name="q" maxlength="150" placeholder="'.e($placeholder).'" value="'.e($f['q']).'"></label>';
+    echo '<form class="filter-bar" method="get" action="index.php" hx-get="index.php" hx-target="#content" hx-push-url="true" hx-trigger="live-filter, submit" hx-sync="this:replace" hx-swap="innerHTML show:none"><input type="hidden" name="page" value="'.$page.'">';
+    echo '<label class="filter-field filter-search"><span>Buscar</span><input class="input" id="list-search-'.$page.'" type="search" name="q" maxlength="150" placeholder="'.e($placeholder).'" value="'.e($f['q']).'" aria-describedby="list-search-help"><small id="list-search-help" data-search-status role="status">Escriba al menos 2 caracteres. Los filtros se aplican automáticamente.</small></label>';
     if ($categories) {
         $choices=[''=>'Todas']; foreach($categories as $c) $choices[$c['id_categoria']]=$c['nombre'];
         filterSelect('categoria','Categoría',$choices,$f['category']);
@@ -87,7 +87,7 @@ function searchForm(string $page, string $placeholder, array $categories=[], arr
     }
     echo '<input type="hidden" name="tam" value="'.$f['size'].'">';
     if ($page==='inventario') echo '<input type="hidden" name="htam" value="'.$f['history_size'].'">';
-    echo '<button class="button is-light">Aplicar</button><a class="button is-text" href="index.php?page='.$page.'" hx-get="index.php?page='.$page.'" hx-target="#content" hx-push-url="true">Limpiar</a></form>';
+    echo '<noscript><button class="button is-light">Buscar</button></noscript><a class="button is-text" href="index.php?page='.$page.'" hx-get="index.php?page='.$page.'" hx-target="#content" hx-push-url="true">Limpiar</a></form>';
     return $f;
 }
 function pagination(string $page, array $data): void
@@ -188,6 +188,8 @@ function dashboard(PDO $db): void
     $low = rows($db, "SELECT TOP (6) nombre, stock_actual, stock_minimo FROM RP03_REPUESTOS WHERE estado='ACTIVO' AND stock_actual <= stock_minimo ORDER BY stock_actual, nombre");
     $recent = rows($db, 'SELECT TOP (6) V.id_venta,V.fecha,V.total,C.nombre FROM RP07_VENTAS V JOIN RP05_CLIENTES C ON C.id_cliente=V.id_cliente ORDER BY V.fecha DESC,V.id_venta DESC');
     dashboardView($stats, $low, $recent);
+    require_once __DIR__.'/Backups.php';
+    backupPanel($db);
 }
 
 function dashboardView(array $stats, array $low, array $recent): void

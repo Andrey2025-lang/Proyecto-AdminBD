@@ -53,6 +53,8 @@ Las instrucciones completas, pruebas y limitaciones están en [taller_repuestos/
 
 ## Base de datos y seguridad
 
+**Inicio → Crear respaldo** permite solicitar una copia manual verificada e independiente (`COPY_ONLY`), sin eliminar las anteriores. Requiere la migración **009**. Historial, intervalos y exclusión de ejecuciones simultáneas se manejan en la base. Se mantiene la tarea de Windows cada 30 minutos; no hay botón para restaurar ni borrar copias.
+
 Git guarda el código y los scripts, **no la base activa ni sus registros actuales**. Las compras y ventas realizadas localmente no se publican automáticamente. Para entregar una copia exacta de la base, generar y compartir un respaldo `.bak` por separado.
 
 Los archivos de configuración locales, las credenciales y los respaldos están excluidos mediante `.gitignore`. Para el ejemplo MySQL se incluye `conexion.example.php`, sin contraseña.

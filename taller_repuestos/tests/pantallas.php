@@ -19,6 +19,8 @@ class FixtureDatabase extends PDO
     public function __construct(private bool $empty) {}
     public function prepare(string $query, array $options = []): PDOStatement|false
     {
+        if(str_contains($query,'RP17_CONFIG_RESPALDOS'))return new FixtureStatement([['intervalo_manual_minutos'=>5,'intervalo_completo_horas'=>24,'intervalo_registro_minutos'=>30]]);
+        if(str_contains($query,'RP16_RESPALDOS'))return new FixtureStatement($this->empty?[]:[['id_respaldo'=>1,'inicio'=>'2026-10-30 10:00:00','fin'=>'2026-10-30 10:00:01','tipo'=>'COMPLETO','estado'=>'VERIFICADO','origen'=>'MANUAL']]);
         if (str_contains($query,'COUNT_BIG(*)')) return new FixtureStatement([['total'=>$this->empty?0:1,'importe'=>'5500.00']]);
         if (str_contains($query, ') partes,')) {
             return new FixtureStatement([['partes'=>4,'bajos'=>2,'vendido'=>'15000.00','clientes'=>1]]);

@@ -134,6 +134,8 @@ Para detener el servidor: `Ctrl+C` en su terminal. El servidor integrado de PHP 
 
 ## Alcance y decisiones
 
+- Los listados se filtran mientras se escribe: mínimo dos caracteres y pausa de 350 ms. Con un carácter no se envía una consulta y se mantienen los resultados previos con un aviso; al borrar se recupera el listado sin búsqueda. Fechas y selectores se aplican al cambiar. Cada consulta conserva los otros filtros y tamaños, vuelve a la primera página y cancela la petición anterior. Las filas siguen paginadas desde la base, no se descargan los catálogos completos para filtrarlos en el navegador. Sin JavaScript queda disponible el botón Buscar.
+
 - Es una aplicación interna local, **sin inicio de sesión**. Elegir un vendedor no autentica a una persona. No se presenta como lista para producción.
 - Cada compra o venta permite hasta 100 partidas. Seleccione un repuesto, cantidad y precio de compra si corresponde, pulse **Agregar a la operación** y repita. Las cantidades y precios de compra del carrito se pueden corregir antes de confirmar. En ventas, el precio lo determina el catálogo, no el navegador. Las ventas agrupan repuestos repetidos; las compras agrupan repuesto y precio iguales y conservan partidas de distinto costo. El servidor valida cantidades acumuladas, stock, referencias, precios y límite total antes de confirmar un solo encabezado. Si falla una partida, revierte encabezado, detalles, historial y clave de envío.
 - En compras, el buscador de repuestos se limita al catálogo habilitado del proveedor elegido. Si cambia el proveedor, los renglones anteriores se marcan para revisarlos y el servidor rechaza la operación completa si alguno no pertenece al nuevo proveedor. La relación se administra en Proveedores → **Repuestos**, sin agregar módulos al menú. El costo de referencia es orientativo: la compra guarda el costo real confirmado y no altera compras anteriores.
@@ -169,6 +171,16 @@ Abrir **Reportes**, seleccionar el tipo de informe, sus fechas y el formato. Tam
 - Son documentos informativos: no facturas ni certificaciones contables con firma digital. No se implementó inicio de sesión; no exponer la aplicación a Internet.
 
 ## Respaldos automáticos
+
+### Respaldo manual desde Inicio
+
+Aplicar `sql/009_respaldos_manuales.sql` después de 005. En **Inicio → Respaldo de la información → Crear respaldo** se solicita una copia completa `COPY_ONLY`, con nombre único, CHECKSUM, compresión y VERIFYONLY. Nunca reemplaza la base ni elimina copias anteriores. No ofrece restauración desde la página.
+
+El historial, los resultados y los intervalos se consultan de SQL Server: `RP16_RESPALDOS` y `RP17_CONFIG_RESPALDOS`. Valores iniciales: completo automático cada 24 horas, registro cada 30 minutos y cinco minutos entre solicitudes manuales. El bloqueo `Repuesto.Respaldos` es compartido por las ejecuciones manuales y automáticas. Un intento manual fallido registrado también consume el intervalo para evitar repeticiones continuas. Una solicitud interrumpida debe revisarse antes de repetirla; un registro en proceso no prueba por sí solo que la tarea siga activa.
+
+La tarea de Windows existente sigue ejecutándose cada 30 minutos; el procedimiento decide si corresponde una copia. Cambiar el intervalo en la base no modifica la frecuencia de la tarea: un intervalo menor requiere ajustar también su disparador. `programado` es información de instalación, no una comprobación en vivo del Programador de tareas.
+
+Prueba real: `python taller_repuestos/tests/respaldos.py`. Crea como máximo una copia manual, verifica rechazo de CSRF y repetición, COPY_ONLY y conservación de datos; no borra respaldos. La aplicación sigue siendo interna y sin autenticación: no exponer este botón a Internet. La cuenta de conexión necesita permisos de respaldo y verificación; no se conceden permisos adicionales automáticamente ni se aceptan rutas desde el navegador.
 
 1. Aplicar `sql/005_respaldos.sql` después de las otras migraciones. Agrega historial y procedimiento; no borra datos ni modifica el procedimiento original del profesor.
 2. Ejecutar `scripts/instalar_respaldos.ps1` desde PowerShell. Usa autenticación de Windows y registra la tarea **Repuesto-RespaldoAutomatico** cada 30 minutos. Si la tarea ya existe se detiene, sin sobrescribirla.

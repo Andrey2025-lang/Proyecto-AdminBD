@@ -19,7 +19,7 @@ ws.addEventListener('message', event => {
         if (message.error) promise?.reject(new Error(JSON.stringify(message.error)));
         else promise?.resolve(message.result);
     }
-    if (message.method === 'Runtime.exceptionThrown') errors.push(message.params.exceptionDetails.text);
+    if (message.method === 'Runtime.exceptionThrown') errors.push(message.params.exceptionDetails.exception?.description||message.params.exceptionDetails.text);
     if (message.method === 'Network.requestWillBeSent' && message.params.request.method === 'POST') posts.push(message.params.request.url);
 });
 ws.addEventListener('close', () => { for (const promise of pending.values()) promise.reject(new Error('Navegador cerrado')); pending.clear(); });
@@ -56,6 +56,34 @@ try {
     await evaluate(`localStorage.removeItem('repuesto.sidebar.pinned')`);
     await navigate('page=clientes');
     assert.equal(await evaluate(`document.querySelector('tbody').rows.length`), 15);
+    await type('.filter-bar input[name=q]','D');
+    await evaluate(`new Promise(resolve=>setTimeout(resolve,500))`);
+    assert.equal(await evaluate(`location.search.includes('q=')`),false);
+    assert.equal(await evaluate(`document.querySelector('[data-search-status]').textContent.includes('2 caracteres')`),true);
+    await type('.filter-bar input[name=q]','Daniela');
+    await wait(`location.search.includes('q=Daniela') && document.querySelector('tbody').textContent.includes('Daniela')`);
+    assert.equal(await evaluate(`document.activeElement.id`),'list-search-clientes');
+    assert.equal(await evaluate(`document.querySelector('.filter-bar button:not(noscript button)')===null`),true);
+    await type('.filter-bar input[name=q]','NO-EXISTE-987654321');
+    await type('.filter-bar input[name=q]','Daniela');
+    await wait(`document.querySelector('.filter-bar input[name=q]').value==='Daniela' && !document.querySelector('[data-search-status]').textContent.includes('Buscando')`);
+    await type('.filter-bar input[name=q]','');
+    await wait(`new URLSearchParams(location.search).get('q')==='' && document.querySelector('tbody').rows.length===15`);
+    await navigate('page=clientes');
+    console.log('OK navegador: búsqueda automática desde 2 caracteres, foco conservado y borrado recupera el listado');
+    await navigate('page=repuestos&tam=30&p=2');
+    await type('.filter-bar input[name=q]','Filtro');
+    await wait(`location.search.includes('q=Filtro') && !new URLSearchParams(location.search).has('p') && !document.querySelector('.htmx-settling')`);
+    assert.equal(await evaluate(`document.querySelector('.pager-jump input[type=number]').value`),'1');
+    assert.equal(await evaluate(`document.querySelector('.pager-size select[name=tam]').value`),'30');
+    await evaluate(`(()=>{const s=document.querySelector('.filter-bar select[name=estado]');s.value='ACTIVO';s.dispatchEvent(new Event('change',{bubbles:true}));})()`);
+    await wait(`location.search.includes('estado=ACTIVO')`);
+    assert.equal(await evaluate(`document.querySelector('.filter-bar input[name=q]').value`),'Filtro');
+    await navigate('page=ventas');
+    await type('.filter-bar input[name=desde]','2026-10-01');
+    await wait(`location.search.includes('desde=2026-10-01')`);
+    await navigate('page=clientes');
+    console.log('OK navegador: filtros de estado y fecha automáticos; búsqueda reinicia página y conserva tamaño');
     assert.equal(await evaluate(`document.querySelector('.filter-bar select[name=tam]')===null`), true);
     assert.equal(await evaluate(`document.querySelector('#sidebar-toggle').closest('#sidebar')!==null`),true);
     assert.equal(await evaluate(`document.querySelector('.topbar #sidebar-toggle')===null`),true);
@@ -169,7 +197,7 @@ try {
     assert.equal(await evaluate(`document.querySelector('#supplier-catalog .supplier-part-form input[name=catalog_version]').value.length>0`), true);
     await screenshot('catalogo-proveedor');
     await evaluate(`document.querySelector('#supplier-catalog [data-supplier-close]').click()`);
-    await wait(`!document.querySelector('#supplier-catalog').open`);
+    await wait(`!document.querySelector('#supplier-catalog').open && document.activeElement.hasAttribute('data-supplier-catalog')`);
     assert.equal(await evaluate(`document.activeElement.hasAttribute('data-supplier-catalog')`), true);
     console.log('OK navegador: catálogo del proveedor se abre sobre el listado, muestra solo sus repuestos y conserva el foco');
 

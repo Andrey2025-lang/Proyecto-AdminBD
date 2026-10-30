@@ -58,6 +58,8 @@ function databaseErrorMessage(Throwable $error, string $action): string
         };
     }
     return match ($code) {
+        50021 => 'Ya hay un respaldo en proceso. Actualice Inicio para consultar su resultado antes de reintentar.',
+        50022 => 'Espere el intervalo entre solicitudes manuales indicado en Inicio. Consulte el historial antes de reintentar.',
         547 => match ($action) {
             'part' => 'La categoría seleccionada ya no está disponible. Seleccione una categoría válida.',
             'sale' => 'El cliente, vendedor o repuesto seleccionado ya no está disponible. Revise la selección.',
@@ -78,8 +80,8 @@ function databaseErrorMessage(Throwable $error, string $action): string
         50014 => 'Un precio cambió. Revise los precios actualizados y confirme nuevamente.',
         50015 => 'El total supera el máximo permitido de 99,999,999.99.',
         50016 => 'El proveedor no tiene habilitado uno de los repuestos. Revise su catálogo.',
-        default => in_array($action, ['sale', 'purchase'], true)
+        default => $action==='backup' ? 'No se pudo confirmar el respaldo. Consulte el historial antes de reintentar o contacte al administrador.' : (in_array($action, ['sale', 'purchase'], true)
             ? 'No se pudo completar la operación. Verifique la conexión e intente nuevamente; no se guardaron cambios parciales en la compra o venta.'
-            : 'No se pudo guardar el registro. Verifique los datos y la conexión e intente nuevamente.',
+            : 'No se pudo guardar el registro. Verifique los datos y la conexión e intente nuevamente.'),
     };
 }

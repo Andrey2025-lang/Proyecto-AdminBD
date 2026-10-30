@@ -114,7 +114,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         header('HX-Push-Url: index.php?page=' . $page);
         if (($_SERVER['HTTP_HX_REQUEST'] ?? '') !== 'true') {
             $_SESSION['notice'] = $notice;
-            $_SESSION['completed_operation']=$GLOBALS['completedOperation'];
+            $_SESSION['completed_operation']=$GLOBALS['completedOperation']??null;
             header('Location: index.php?page=' . $page, true, 303);
             exit;
         }
@@ -171,5 +171,7 @@ if ($partial) { echo $content; exit; }
 <dialog id="record-editor" class="operation-dialog edit-dialog" aria-labelledby="edit-title"></dialog>
 <dialog id="download-dialog" class="operation-dialog edit-dialog" aria-labelledby="download-title"></dialog>
 <dialog id="supplier-catalog" class="operation-dialog" aria-labelledby="supplier-catalog-title"></dialog>
+<script src="assets/backups.js?v=<?= filemtime(__DIR__.'/assets/backups.js') ?>" defer></script>
+<script src="assets/filters.js?v=<?= filemtime(__DIR__.'/assets/filters.js') ?>" defer></script>
 <script src="assets/supplier-catalog.js?v=<?= filemtime(__DIR__.'/assets/supplier-catalog.js') ?>" defer></script>
 </body></html>

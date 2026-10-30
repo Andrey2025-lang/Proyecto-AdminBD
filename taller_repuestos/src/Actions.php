@@ -109,6 +109,10 @@ function requireReference(PDO $db, string $table, string $pk, int $id, string $m
 function action(PDO $db): string
 {
     $action = $_POST['action'] ?? '';
+    if($action==='backup') {
+        run($db,'EXEC dbo.sp_RP_RespaldoAutomatico @manual=1');
+        return 'Respaldo creado y verificado. Las copias anteriores se conservaron.';
+    }
     if($action==='supplier_part')return saveSupplierPart($db);
     if ($action === 'category') {
         $name = textInput('nombre', 100);
