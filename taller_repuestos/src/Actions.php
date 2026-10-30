@@ -162,10 +162,14 @@ function action(PDO $db): string
     $token = validateOperationToken($action);
     $counterparty = integerInput($action === 'sale' ? 'id_cliente' : 'id_proveedor');
     $seller = $action === 'sale' ? integerInput('id_vendedor') : null;
+    $purchaseTax=$action==='purchase'&&isset($_POST['tarifa_compra'])?integerInput('tarifa_compra',0):0;
+    if($purchaseTax && ($_POST['confirmar_iva']??'')!=='1')throw new InvalidArgumentException('Confirme que el comprobante del proveedor indica IVA incluido con la tarifa seleccionada.');
     // El precio del catálogo no forma parte de la identidad del envío de venta:
     // puede cambiar después de confirmarlo, sin convertir su reenvío en otra venta.
     $identity=array_map(static fn($line)=>[$line['id_repuesto'],$line['cantidad'],$action==='purchase'?$line['precio_unitario']:null],$lines);
-    $fingerprint = hash('sha256', json_encode([$action,$counterparty,$seller,$identity], JSON_THROW_ON_ERROR));
+    $identityData=[$action,$counterparty,$seller,$identity];
+    if($purchaseTax)$identityData[]=$purchaseTax;
+    $fingerprint = hash('sha256', json_encode($identityData, JSON_THROW_ON_ERROR));
     $db->beginTransaction();
     try {
         if (!claimOperationRequest($db, $token, $action, $fingerprint)) {
@@ -205,13 +209,14 @@ function action(PDO $db): string
             $operationId=(int)$purchase[0]['id_compra']; $params=[];
             foreach($lines as $line) array_push($params,$operationId,$line['id_repuesto'],$line['cantidad'],$line['precio_unitario'],decimal(moneyCents($line['precio_unitario'])*$line['cantidad']));
             run($db,'INSERT INTO RP10_DETALLE_COMPRAS(id_compra,id_repuesto,cantidad,precio_unitario,subtotal) VALUES '.implode(',',array_fill(0,count($lines),'(?,?,?,?,?)')),$params);
+            if($purchaseTax)run($db,"EXEC dbo.sp_RP_RegistrarIVA @tipo='compra',@id=?,@id_tarifa=?",[$operationId,$purchaseTax]);
         }
         run($db,'UPDATE RP14_SOLICITUDES_OPERACION SET id_operacion=? WHERE solicitud=?',[$operationId,$token]);
         $db->commit();
         $GLOBALS['completedOperation']=['kind'=>$action==='sale'?'ventas':'compras','id'=>$operationId];
     } catch (Throwable $e) {
         if ($db->inTransaction()) $db->rollBack();
-        if($e instanceof PDOException && in_array((int)($e->errorInfo[1]??0),[50001,50003,50004,50010,50011,50012,50013,50014,50015,50016],true)) {
+        if($e instanceof PDOException && in_array((int)($e->errorInfo[1]??0),[50001,50003,50004,50010,50011,50012,50013,50014,50015,50016,50030],true)) {
             throw new InvalidArgumentException(databaseErrorMessage($e,$action),0,$e);
         }
         throw $e;

@@ -152,6 +152,7 @@ if ($partial) { echo $content; exit; }
 <!doctype html>
 <html lang="es" data-theme="light">
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="htmx-config" content='{"historyRestoreAsHxRequest":false}'><title>Repuesto · Gestión del taller</title>
+<script src="assets/reset-filters.js?v=<?= filemtime(__DIR__.'/assets/reset-filters.js') ?>"></script>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bulma@1.0.4/css/bulma.min.css">
 <link rel="stylesheet" href="assets/app.css?v=<?= filemtime(__DIR__.'/assets/app.css') ?>">
 <script src="../miniframework_cech/miniframework_cech/htmx.min.js" defer></script><script src="assets/app.js?v=<?= filemtime(__DIR__.'/assets/app.js') ?>" defer></script><script src="assets/operations.js?v=<?= filemtime(__DIR__.'/assets/operations.js') ?>" defer></script><script src="assets/editor.js?v=<?= filemtime(__DIR__.'/assets/editor.js') ?>" defer></script><script src="assets/downloads.js?v=<?= filemtime(__DIR__.'/assets/downloads.js') ?>" defer></script></head>

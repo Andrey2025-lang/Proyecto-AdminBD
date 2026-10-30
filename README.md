@@ -39,6 +39,8 @@ Todos los módulos consultan SQL Server. La antigua vista con datos incrustados 
 
 ## Reportes y navegación
 
+La migración **010** incorpora IVA incluido para ventas nuevas: los precios finales no aumentan; el procedimiento guarda base e impuesto y los muestra en el detalle y comprobantes. En compras se requiere confirmar el IVA del proveedor. La historia sin desglose se conserva, sin asignarle impuestos supuestos. Ver alcance fiscal y limitaciones en la guía de la aplicación.
+
 En **Reportes** se puede descargar Excel real (`.xlsx`), CSV o abrir un documento imprimible para guardar como PDF con el navegador. Hay filtros por fecha y búsqueda; cada listado también permite exportar sus filtros actuales. No se exporta únicamente la página visible.
 
 El menú muestra únicamente Inicio, Repuestos, Clientes, Proveedores, Compras, Ventas e Inventario e historial. En escritorio se abre al pasar el mouse y el contenido ajusta su ancho; al salir se contrae. El botón Menú fija su apertura y otro clic devuelve el modo automático. En móvil se abre al tocarlo. Cambiar de módulo devuelve la pantalla arriba. Editar abre un formulario superpuesto y conserva filtros/página. La paginación mantiene controles Anterior/Página/Siguiente estables.

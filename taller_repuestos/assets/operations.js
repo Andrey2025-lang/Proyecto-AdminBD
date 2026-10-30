@@ -10,20 +10,32 @@
         const table=editor.querySelector('.cart-items'), serialized=editor.querySelector('.cart-lines');
         const alert=editor.querySelector('.cart-alert'), submit=editor.querySelector('[data-cart-submit]');
         const supplier=sale?null:form.querySelector('#id_proveedor');
+        const taxSelect=form.querySelector('[name=tarifa_compra]'),taxConfirm=form.querySelector('[name=confirmar_iva]');
+        const taxRates=JSON.parse(editor.querySelector('.tax-rates').textContent);
         let lines=JSON.parse(editor.querySelector('.cart-seed').textContent);
         const cents=value=>/^\d{1,8}(?:\.\d{1,2})?$/.test(String(value))?Math.round(Number(value)*100):null;
         function warn(text) { alert.textContent=text; alert.hidden=!text; }
         function sync() {
-            let total=0, valid=lines.length>0;
+            let total=0, base=0,valid=lines.length>0;
+            const rate=sale?Number(editor.dataset.taxRate):taxRates.find(rate=>String(rate.id_tarifa)===taxSelect.value)?.porcentaje;
+            const ratePoints=rate===undefined?null:Math.round(Number(rate)*100);
             for(const line of lines) {
                 const cost=cents(line.precio);
                 if(!Number.isInteger(line.cantidad)||line.cantidad<1||line.cantidad>2147483647||cost===null||(sale&&line.cantidad>line.stock)) valid=false;
                 if(!sale&&(!supplier.value||String(line.supplier)!==supplier.value||line.supplierValid===false))valid=false;
-                if(cost!==null && Number.isInteger(line.cantidad)) total+=cost*line.cantidad;
+                if(cost!==null && Number.isInteger(line.cantidad)) {
+                    const amount=cost*line.cantidad;total+=amount;
+                    if(ratePoints!==null)base+=Math.round(amount*10000/(10000+ratePoints));
+                }
             }
             if(total>9999999999) valid=false;
             serialized.value=JSON.stringify(lines.map(line=>({id_repuesto:line.id_repuesto,cantidad:line.cantidad,...(sale?{precio_esperado:String(line.precio)}:{precio_unitario:String(line.precio)})})));
             editor.querySelector('#total-preview').textContent=number.format(total/100);
+            editor.querySelector('[data-tax-note]').textContent=ratePoints===null?'Desglose de IVA no registrado.':`Los precios incluyen IVA (${Number(rate).toFixed(2)}%). No se suma otra vez al total.`;
+            editor.querySelector('[data-tax-breakdown]').hidden=ratePoints===null;
+            editor.querySelector('[data-tax-base]').textContent=number.format(base/100);
+            editor.querySelector('[data-tax-amount]').textContent=number.format((total-base)/100);
+            if(!sale&&taxSelect.value!=='0'&&!taxConfirm.checked)valid=false;
             submit.disabled=!valid;
             return valid;
         }
@@ -77,6 +89,7 @@
             else sync();
         });
         editor.querySelector('[data-cart-clear]')?.addEventListener('click',()=>{lines=[];warn('');render();});
+        taxSelect?.addEventListener('change',sync);taxConfirm?.addEventListener('change',sync);
         carts.set(editor,true);render();editor.dataset.ready='true';
     }
 

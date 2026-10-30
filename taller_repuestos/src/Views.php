@@ -67,8 +67,8 @@ function filterSelect(string $name, string $label, array $choices, $selected): v
 function searchForm(string $page, string $placeholder, array $categories=[], array $sellers=[]): array
 {
     $f=listFilters();
-    echo '<form class="filter-bar" method="get" action="index.php" hx-get="index.php" hx-target="#content" hx-push-url="true" hx-trigger="live-filter, submit" hx-sync="this:replace" hx-swap="innerHTML show:none"><input type="hidden" name="page" value="'.$page.'">';
-    echo '<label class="filter-field filter-search"><span>Buscar</span><input class="input" id="list-search-'.$page.'" type="search" name="q" maxlength="150" placeholder="'.e($placeholder).'" value="'.e($f['q']).'" aria-describedby="list-search-help"><small id="list-search-help" data-search-status role="status">Escriba al menos 2 caracteres. Los filtros se aplican automáticamente.</small></label>';
+    echo '<form class="filter-bar" autocomplete="off" method="get" action="index.php" hx-get="index.php" hx-target="#content" hx-push-url="true" hx-trigger="live-filter, submit" hx-sync="this:replace" hx-swap="innerHTML show:none"><input type="hidden" name="page" value="'.$page.'">';
+    echo '<label class="filter-field filter-search"><span>Buscar</span><input class="input" id="list-search-'.$page.'" type="search" name="q" maxlength="150" placeholder="'.e($placeholder).'" value="'.e($f['q']).'" aria-describedby="list-search-help"></label>';
     if ($categories) {
         $choices=[''=>'Todas']; foreach($categories as $c) $choices[$c['id_categoria']]=$c['nombre'];
         filterSelect('categoria','Categoría',$choices,$f['category']);
@@ -87,7 +87,7 @@ function searchForm(string $page, string $placeholder, array $categories=[], arr
     }
     echo '<input type="hidden" name="tam" value="'.$f['size'].'">';
     if ($page==='inventario') echo '<input type="hidden" name="htam" value="'.$f['history_size'].'">';
-    echo '<noscript><button class="button is-light">Buscar</button></noscript><a class="button is-text" href="index.php?page='.$page.'" hx-get="index.php?page='.$page.'" hx-target="#content" hx-push-url="true">Limpiar</a></form>';
+    echo '<noscript><button class="button is-light">Buscar</button></noscript><a class="button is-text filter-clear" href="index.php?page='.$page.'" hx-get="index.php?page='.$page.'" hx-target="#content" hx-push-url="true">Limpiar</a><small id="list-search-help" class="filter-help" data-search-status role="status">Escriba al menos 2 caracteres. Los filtros se aplican automáticamente.</small></form>';
     return $f;
 }
 function pagination(string $page, array $data): void
@@ -233,6 +233,7 @@ function partsPage(PDO $db): void
     input('Nombre del repuesto', 'nombre', $part['nombre'] ?? '', 'text', 'required maxlength="150"');
     options('Categoría', 'id_categoria', $cats, 'id_categoria', 'nombre', $part['id_categoria'] ?? ''); ?>
     <div class="form-grid"><?php input('Precio de compra', 'precio_compra', $part['precio_compra'] ?? '0.00', 'number', 'min="0" max="99999999.99" step="0.01" required'); input('Precio de venta', 'precio_venta', $part['precio_venta'] ?? '0.00', 'number', 'min="0" max="99999999.99" step="0.01" required'); ?></div>
+    <p class="help mb-4">El precio de venta es el precio final con IVA incluido. En compras, confirme el tratamiento del impuesto según el comprobante del proveedor.</p>
     <?php input('Existencias mínimas', 'stock_minimo', $part['stock_minimo'] ?? 1, 'number', 'min="0" max="2147483647" step="1" required');
     options('Estado', 'estado', [['id'=>'ACTIVO','label'=>'Activo'],['id'=>'INACTIVO','label'=>'Inactivo']], 'id', 'label', $part['estado'] ?? 'ACTIVO'); ?>
     <button class="button is-primary is-fullwidth">Guardar repuesto</button>
@@ -277,6 +278,9 @@ function operationsPage(PDO $db, string $page): void
     $parts=lookupItems($db,$sale?'repuestos':'repuestos_compra','',$selectedPart,$sale?0:$selectedPerson);
     $people=lookupItems($db,$sale?'clientes':'proveedores','',$selectedPerson);
     $sellers = $sale ? rows($db, "SELECT usuario_id,nombre_usuario FROM RP13_USUARIOS WHERE estado='ACTIVO' AND nombre_usuario <> 'sistema' ORDER BY nombre_usuario") : [];
+    $taxRates=rows($db,'SELECT id_tarifa,nombre,porcentaje FROM dbo.RP20_TARIFAS_IVA WHERE activo=1 ORDER BY porcentaje,id_tarifa');
+    $saleTax=$sale?(rows($db,'SELECT T.porcentaje FROM dbo.RP21_CONFIG_FISCAL C JOIN dbo.RP20_TARIFAS_IVA T ON T.id_tarifa=C.tarifa_venta AND T.activo=1 WHERE C.id=1')[0]['porcentaje']??null):null;
+    if($sale&&$saleTax===null)throw new InvalidArgumentException('No hay una tarifa de IVA disponible para ventas. Contacte al administrador.');
     ?>
     <div class="info-strip"><span><?= $sale ? '↗' : '↙' ?></span><p><?= $sale ? 'Al confirmar la venta se descuentan las existencias. El precio se toma del catálogo.' : 'Al confirmar la recepción se suman las unidades al inventario.' ?> Seleccione el repuesto y la cantidad.</p></div>
     <div class="split-layout operations-layout"><section class="panel-card list-panel"><?php panelTitle($sale ? 'Ventas registradas' : 'Compras recibidas', 'Operaciones confirmadas');
@@ -290,8 +294,14 @@ function operationsPage(PDO $db, string $page): void
     if (!$people || !$parts || ($sale && !$sellers)): ?><div class="notification is-warning is-light">Para continuar necesita <?= $sale ? 'un cliente, un repuesto y un vendedor activo' : 'un proveedor con repuestos habilitados' ?>. Complete los registros que faltan.</div><?php endif;
     startForm($page, $sale ? 'sale' : 'purchase');
     lookupField($sale?'Cliente':'Proveedor',$sale?'id_cliente':'id_proveedor',$sale?'clientes':'proveedores',$people,$operation,$selectedPerson);
-    if ($sale) options('Vendedor responsable', 'id_vendedor', $sellers, 'usuario_id', 'nombre_usuario'); ?>
-    <div class="cart-editor" data-operation="<?= $operation ?>"><script type="application/json" class="cart-seed"><?= json_encode(cartSeed($db,$operation),JSON_HEX_TAG|JSON_HEX_AMP|JSON_HEX_APOS|JSON_HEX_QUOT|JSON_THROW_ON_ERROR) ?></script><input type="hidden" name="lines" class="cart-lines" value="[]">
+    if ($sale) options('Vendedor responsable', 'id_vendedor', $sellers, 'usuario_id', 'nombre_usuario');
+    else {
+        $choices=[0=>'Sin desglose de IVA confirmado'];
+        foreach($taxRates as $rate)$choices[$rate['id_tarifa']]=$rate['nombre'].' incluido ('.number_format((float)$rate['porcentaje'],2).'%)';
+        filterSelect('tarifa_compra','IVA según el comprobante del proveedor',$choices,selectedPostId('purchase','tarifa_compra'));
+        echo '<label class="checkbox mt-3 mb-3"><input type="checkbox" name="confirmar_iva" value="1" '.(($_POST['confirmar_iva']??'')==='1'?'checked':'').'> Confirmo que todos los precios ingresados incluyen el IVA de la tarifa seleccionada, según el comprobante del proveedor.</label><p class="help mb-4">Si no está confirmado o el comprobante tiene tarifas distintas, deje la opción sin desglose. Esto no significa que la compra esté exenta.</p>';
+    } ?>
+    <div class="cart-editor" data-operation="<?= $operation ?>" data-tax-rate="<?= e($saleTax??'') ?>"><script type="application/json" class="tax-rates"><?= json_encode($taxRates,JSON_HEX_TAG|JSON_HEX_AMP|JSON_HEX_APOS|JSON_HEX_QUOT|JSON_THROW_ON_ERROR) ?></script><script type="application/json" class="cart-seed"><?= json_encode(cartSeed($db,$operation),JSON_HEX_TAG|JSON_HEX_AMP|JSON_HEX_APOS|JSON_HEX_QUOT|JSON_THROW_ON_ERROR) ?></script><input type="hidden" name="lines" class="cart-lines" value="[]">
     <h3 class="cart-heading">Agregar repuestos</h3>
     <?php lookupField('Repuesto','id_repuesto',$sale?'repuestos':'repuestos_compra',$parts,$operation,0,false); ?>
     <?php if(!$sale): ?><p class="help mb-4">Primero seleccione un proveedor. Solo se muestran sus repuestos habilitados. Puede administrar su oferta desde Proveedores → Editar → Repuestos que ofrece.</p><?php endif ?>
@@ -302,6 +312,7 @@ function operationsPage(PDO $db, string $page): void
     <div class="cart-alert notification is-warning is-light" role="alert" hidden></div><div class="cart-table-wrap"><table class="table is-fullwidth cart-table"><thead><tr><th>Repuesto</th><th>Cant.</th><th>Precio</th><th></th></tr></thead><tbody class="cart-items"></tbody></table></div>
     <?php if(!$sale): ?><button type="button" class="button is-small is-light" data-cart-clear>Vaciar repuestos</button><?php endif ?>
     <div class="total-preview"><span>Total estimado</span><strong id="total-preview">₡ 0.00</strong><small>Revise la cantidad y el precio antes de confirmar.</small></div>
+    <div class="fiscal-preview help mb-4" aria-live="polite"><p data-tax-note><?= $sale?'Los precios incluyen IVA ('.e($saleTax).'%). No se suma otra vez al total.':'Desglose de IVA no registrado.' ?></p><p data-tax-breakdown <?= $sale?'':'hidden' ?>>Monto antes del IVA: <strong data-tax-base>₡ 0.00</strong> · IVA incluido: <strong data-tax-amount>₡ 0.00</strong></p><p>Desglose estimado; el detalle confirmado se guarda al registrar la operación.</p></div>
     <button class="button is-primary is-fullwidth" data-cart-submit <?= !$people || !$parts || ($sale && !$sellers) ? 'disabled' : '' ?>><?= $sale ? 'Confirmar venta' : 'Confirmar recepción' ?></button></div>
     <p class="help mt-3">Una vez confirmada, la operación no se puede editar ni anular.</p></form></section></div>
     <?php

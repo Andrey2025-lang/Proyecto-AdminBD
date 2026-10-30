@@ -80,6 +80,7 @@ function databaseErrorMessage(Throwable $error, string $action): string
         50014 => 'Un precio cambió. Revise los precios actualizados y confirme nuevamente.',
         50015 => 'El total supera el máximo permitido de 99,999,999.99.',
         50016 => 'El proveedor no tiene habilitado uno de los repuestos. Revise su catálogo.',
+        50030 => 'No se pudo registrar el desglose del IVA. Revise la tarifa seleccionada o contacte al administrador. No se confirmó la operación.',
         default => $action==='backup' ? 'No se pudo confirmar el respaldo. Consulte el historial antes de reintentar o contacte al administrador.' : (in_array($action, ['sale', 'purchase'], true)
             ? 'No se pudo completar la operación. Verifique la conexión e intente nuevamente; no se guardaron cambios parciales en la compra o venta.'
             : 'No se pudo guardar el registro. Verifique los datos y la conexión e intente nuevamente.'),

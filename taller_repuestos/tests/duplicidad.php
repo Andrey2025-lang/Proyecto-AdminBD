@@ -107,6 +107,8 @@ try {
     expectRejection($db,['action'=>'supplier_part','id_proveedor'=>$supplier,'catalog_part'=>$part,'estado'=>'ACTIVO','costo_referencia'=>'10.00','codigo_proveedor'=>''],'Confirme');
     executePost($db,['action'=>'supplier_part','id_proveedor'=>$supplier,'catalog_part'=>$part,'estado'=>'ACTIVO','costo_referencia'=>'10.00','codigo_proveedor'=>'','confirmar_oferta'=>'1']);
     executePost($db, $purchase);
+    $initialDoc=operationDocument($db,'compras',$GLOBALS['completedOperation']['id']);
+    verifyDuplicate($initialDoc['header']['base_iva']===null&&$initialDoc['header']['monto_iva']===null,'compra sin confirmación no inventa un desglose del IVA');
     $after = snapshotDuplicate($db, $part);
     verifyDuplicate((int)$after['stock_actual'] === 6 && (int)$after['compras'] === 1, 'compra inicial registrada una sola vez');
     verifyDuplicate(str_contains(executePost($db, $purchase), 'ya fue registrada'), 'reenvío de compra reconocido');
@@ -148,6 +150,10 @@ try {
         ['id_repuesto'=>$part,'cantidad'=>2,'precio_unitario'=>'9.00'],
         ['id_repuesto'=>$part,'cantidad'=>3,'precio_unitario'=>'10.00'],
         ['id_repuesto'=>$second,'cantidad'=>8,'precio_unitario'=>'5.00']])]);
+    $tax=rows($db,'SELECT T.id_tarifa,T.porcentaje FROM RP21_CONFIG_FISCAL C JOIN RP20_TARIFAS_IVA T ON T.id_tarifa=C.tarifa_venta WHERE C.id=1')[0];
+    $multiple['tarifa_compra']=$tax['id_tarifa'];
+    expectRejection($db,$multiple,'Confirme');
+    $multiple['confirmar_iva']='1';
     $beforeCatalog=[snapshotDuplicate($db,$part),snapshotDuplicate($db,$second)];
     expectRejection($db,$multiple,'no tiene habilitado');
     verifyDuplicate([snapshotDuplicate($db,$part),snapshotDuplicate($db,$second)]===$beforeCatalog,'una relación inválida revierte toda la compra, no solo ese repuesto');
@@ -155,6 +161,11 @@ try {
     executePost($db,$multiple); $purchaseId=$GLOBALS['completedOperation']['id'];
     $doc=operationDocument($db,'compras',$purchaseId);
     verifyDuplicate(count($doc['lines'])===3 && $doc['consistent'] && (float)$doc['header']['total']===88.0,'una compra con tres partidas, dos repuestos y total correcto');
+    $base=array_sum(array_map(static fn($line)=>round((float)$line['subtotal']/(1+(float)$tax['porcentaje']/100),2),$doc['lines']));
+    verifyDuplicate(abs((float)$doc['header']['base_iva']-$base)<0.005&&abs((float)$doc['header']['monto_iva']-(88-$base))<0.005,'IVA de compra se extrae del total ya incluido sin cobro adicional');
+    $beforeTax=[snapshotDuplicate($db,$part),snapshotDuplicate($db,$second)];
+    expectRejection($db,signedPost(array_replace($multiple,['tarifa_compra'=>2147483647])),'desglose del IVA');
+    verifyDuplicate([snapshotDuplicate($db,$part),snapshotDuplicate($db,$second)]===$beforeTax,'tarifa inválida revierte compra completa, stock y movimientos');
     verifyDuplicate((int)snapshotDuplicate($db,$part)['stock_actual']===14 && (int)snapshotDuplicate($db,$second)['stock_actual']===8,'entrada acumulada de partidas del mismo repuesto');
     $multiple=signedPost(['action'=>'sale','id_cliente'=>$client,'id_vendedor'=>$seller,'lines'=>json_encode([
         ['id_repuesto'=>$part,'cantidad'=>2,'precio_esperado'=>'20.00'],
@@ -163,6 +174,13 @@ try {
     executePost($db,$multiple);$saleId=$GLOBALS['completedOperation']['id'];
     $doc=operationDocument($db,'ventas',$saleId);
     verifyDuplicate(count($doc['lines'])===2 && $doc['units']===6 && $doc['consistent'] && (float)$doc['header']['total']===105.0,'una venta agrupa repuestos repetidos y conserva cantidades, precios y total');
+    $base=array_sum(array_map(static fn($line)=>round((float)$line['subtotal']/(1+(float)$tax['porcentaje']/100),2),$doc['lines']));
+    verifyDuplicate(abs((float)$doc['header']['base_iva']-$base)<0.005&&abs((float)$doc['header']['monto_iva']-(105-$base))<0.005,'procedimiento de venta guarda IVA incluido con redondeo por repuesto');
+    $db->beginTransaction();
+    try {
+        run($db,'UPDATE RP20_TARIFAS_IVA SET porcentaje=porcentaje+1 WHERE id_tarifa=?',[$tax['id_tarifa']]);
+        verifyDuplicate(operationDocument($db,'ventas',$saleId)===$doc,'cambiar una tarifa futura no recalcula el documento confirmado');
+    } finally {$db->rollBack();}
     $before=[snapshotDuplicate($db,$part),snapshotDuplicate($db,$second)];
     verifyDuplicate(str_contains(executePost($db,$multiple),'ya fue registrada') && $GLOBALS['completedOperation']['id']===$saleId,'reenvío múltiple recupera el mismo comprobante');
     $failed=signedPost(array_replace($multiple,['lines'=>json_encode([
@@ -220,10 +238,17 @@ try {
             $tokens[]=$fields['operation_token'];
             $fields+=['action'=>$operation,'id_cliente'=>$client,'id_proveedor'=>$supplier,'id_vendedor'=>$seller,
                 'lines'=>json_encode([['id_repuesto'=>$part,'cantidad'=>1,'precio_unitario'=>'10.00','precio_esperado'=>'20.00'],['id_repuesto'=>$second,'cantidad'=>1,'precio_unitario'=>'5.00','precio_esperado'=>'15.00']])];
+            if($operation==='purchase')$fields+=['tarifa_compra'=>$tax['id_tarifa'],'confirmar_iva'=>'1'];
             [$status,$html]=$http($page,$fields);
             verifyDuplicate($status===200 && preg_match('/data-open-operation data-kind="'.$page.'" data-id="(\d+)"/',$html,$match)===1,'HTTP '.$page.' confirma varias partidas y abre su comprobante');
             $id=(int)$match[1];$doc=operationDocument($db,$page,$id);
             verifyDuplicate(count($doc['lines'])===2 && $doc['consistent'],'HTTP '.$page.' guarda un encabezado consistente con dos partidas');
+            [$status,$receipt]=$http($page.'&view_operation='.$page.'&id='.$id);
+            verifyDuplicate($status===200&&str_contains($receipt,'Los precios incluyen IVA')&&str_contains($receipt,'Monto antes del IVA'),'HTTP detalle '.$page.' muestra IVA incluido sin sumarlo de nuevo');
+            [$status,$receipt]=$http($page.'&receipt='.$page.'&id='.$id.'&format=print');
+            verifyDuplicate($status===200&&str_contains($receipt,'Los precios incluyen IVA')&&str_contains($receipt,'IVA incluido'),'HTTP comprobante imprimible '.$page.' muestra el desglose');
+            [$status,$receipt]=$http($page.'&receipt='.$page.'&id='.$id.'&format=xlsx');
+            verifyDuplicate($status===200&&str_starts_with($receipt,'PK'),'HTTP Excel '.$page.' con desglose fiscal válido');
             [$status,$html]=$http($page,$fields);
             verifyDuplicate($status===200 && str_contains($html,'data-id="'.$id.'"') && str_contains($html,'ya fue registrada'),'HTTP '.$page.' reenvía sin duplicar y recupera la misma referencia');
         }

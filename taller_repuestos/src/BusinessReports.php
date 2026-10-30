@@ -55,8 +55,13 @@ function reportMetrics(PDO $db,string $kind,array $plan,array $summary): array
             ['label'=>'Repuestos en el mínimo o por debajo','value'=>$r['bajos'],'type'=>'int'],['label'=>'Valor estimado al precio de compra actual (CRC)','value'=>$r['estimado'],'type'=>'money']];
     }
     if(in_array($kind,['ventas','compras'],true)) {
+        $a=$kind==='ventas'?'V':'C';
+        $fiscal=rows($db,"SELECT COALESCE(SUM($a.base_iva),0) base_iva,COALESCE(SUM($a.monto_iva),0) monto_iva,COALESCE(SUM(CASE WHEN $a.base_iva IS NULL THEN 1 ELSE 0 END),0) sin_desglose".$base,$plan['params'])[0];
         return [['label'=>$kind==='ventas'?'Unidades vendidas':'Unidades recibidas','value'=>$summary['units'],'type'=>'int'],
-            ['label'=>$summary['average_label'],'value'=>$summary['promedio'],'type'=>'money']];
+            ['label'=>$summary['average_label'],'value'=>$summary['promedio'],'type'=>'money'],
+            ['label'=>'Monto antes del IVA (solo operaciones con desglose)','value'=>$fiscal['base_iva'],'type'=>'money'],
+            ['label'=>'IVA incluido registrado (no se suma al total)','value'=>$fiscal['monto_iva'],'type'=>'money'],
+            ['label'=>'Operaciones sin desglose de IVA registrado','value'=>$fiscal['sin_desglose'],'type'=>'int']];
     }
     return [];
 }

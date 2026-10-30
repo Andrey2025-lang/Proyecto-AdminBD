@@ -30,7 +30,14 @@ async function evaluate(expression) {
     return result.result.value;
 }
 async function wait(expression) {
-    assert.equal(await evaluate(`new Promise(resolve => { const end = Date.now()+10000; const check=()=> { if (${expression}) resolve(true); else if(Date.now()>end) resolve(false); else setTimeout(check,40); }; check(); })`), true, expression);
+    for(let attempt=0;attempt<4;attempt++) {
+        try {
+            assert.equal(await evaluate(`new Promise(resolve => { const end = Date.now()+10000; const check=()=> { if (${expression}) resolve(true); else if(Date.now()>end) resolve(false); else setTimeout(check,40); }; check(); })`), true, expression);
+            return;
+        } catch(error) {
+            if(attempt===3||!/navigated or closed|Execution context was destroyed|Cannot find context/.test(error.message))throw error;
+        }
+    }
 }
 async function navigate(query) {
     await send('Page.navigate', { url: 'http://127.0.0.1:8080/taller_repuestos/index.php?' + query });
@@ -84,6 +91,20 @@ try {
     await wait(`location.search.includes('desde=2026-10-01')`);
     await navigate('page=clientes');
     console.log('OK navegador: filtros de estado y fecha automáticos; búsqueda reinicia página y conserva tamaño');
+    await navigate('page=repuestos&q=Filtro&estado=ACTIVO&tam=30&p=2');
+    assert.equal(await evaluate(`document.querySelector('.filter-bar input[name=q]').value`),'Filtro');
+    assert.equal(await evaluate(`(()=>{const form=document.querySelector('.filter-bar');return [...form.querySelectorAll('.input,.filter-clear')].every(x=>Math.abs(x.getBoundingClientRect().height-40)<1)&&form.querySelector('.filter-help').getBoundingClientRect().top>=Math.max(...[...form.querySelectorAll('.input,.filter-clear')].map(x=>x.getBoundingClientRect().bottom));})()`),true);
+    await send('Page.reload');
+    await wait(`document.readyState==='complete' && location.search==='?page=repuestos' && document.querySelector('.filter-bar input[name=q]')?.value==='' && document.querySelector('.pager-size select[name=tam]')?.value==='15'`);
+    assert.equal(await evaluate(`document.querySelector('.filter-bar select[name=estado]').value`),'');
+    await navigate('page=inventario&q=Filtro&tam=30&htam=30&p=2&h=2');
+    await send('Page.reload');
+    await wait(`document.readyState==='complete' && location.search==='?page=inventario' && document.querySelector('.pager-size select[name=tam]')?.value==='10' && document.querySelector('.pager-size select[name=htam]')?.value==='10'`);
+    await navigate('page=ventas&f_cliente=1&vendedor=1&desde=2026-10-01&tam=30&p=2');
+    await send('Page.reload');
+    await wait(`document.readyState==='complete' && location.search==='?page=ventas' && document.querySelector('.filter-bar input[name=desde]')?.value===''`);
+    await navigate('page=clientes');
+    console.log('OK navegador: controles alineados y recarga restablece búsqueda, persona, fechas y paginación');
     assert.equal(await evaluate(`document.querySelector('.filter-bar select[name=tam]')===null`), true);
     assert.equal(await evaluate(`document.querySelector('#sidebar-toggle').closest('#sidebar')!==null`),true);
     assert.equal(await evaluate(`document.querySelector('.topbar #sidebar-toggle')===null`),true);
@@ -178,6 +199,13 @@ try {
     await evaluate(`document.querySelector('.cart-remove').click()`);
     assert.equal(await evaluate(`JSON.parse(document.querySelector('.cart-lines').value).length`),1);
     assert.equal(await evaluate(`document.querySelector('[data-cart-submit]').disabled`),false);
+    await evaluate(`(()=>{const s=document.querySelector('[name=tarifa_compra]');s.value=s.options[1].value;s.dispatchEvent(new Event('change',{bubbles:true}));})()`);
+    assert.equal(await evaluate(`document.querySelector('[data-cart-submit]').disabled`),true);
+    await evaluate(`(()=>{const c=document.querySelector('[name=confirmar_iva]');c.checked=true;c.dispatchEvent(new Event('change',{bubbles:true}));})()`);
+    assert.equal(await evaluate(`document.querySelector('[data-cart-submit]').disabled`),false);
+    assert.equal(await evaluate(`document.querySelector('[data-tax-note]').textContent.includes('Los precios incluyen IVA')`),true);
+    await evaluate(`(()=>{const s=document.querySelector('[name=tarifa_compra]');s.value='0';s.dispatchEvent(new Event('change',{bubbles:true}));})()`);
+    assert.equal(await evaluate(`document.querySelector('[data-tax-breakdown]').hidden`),true);
     console.log('OK navegador: carrito de compra agrega varios repuestos, modifica cantidades y elimina partidas');
     await screenshot('compra-carrito');
     await type('#search-id_repuesto', 'Toy');
@@ -219,6 +247,9 @@ try {
     await evaluate(`document.querySelector('[data-cart-add]').click()`);
     assert.equal(await evaluate(`JSON.parse(document.querySelector('.cart-lines').value).length`),1);
     assert.ok(await evaluate(`JSON.parse(document.querySelector('.cart-lines').value)[0].precio_esperado`));
+    assert.equal(await evaluate(`(()=>{const n=s=>Math.round(Number(document.querySelector(s).textContent.replace(/[^0-9.]/g,''))*100);return n('[data-tax-base]')+n('[data-tax-amount]')===n('#total-preview');})()`),true);
+    assert.equal(await evaluate(`document.querySelector('[data-tax-note]').textContent.includes('Los precios incluyen IVA')`),true);
+    console.log('OK navegador: IVA ya incluido en total de venta y confirmación explícita en compras');
     console.log('OK navegador: selección de cliente sin desplegable adicional');
 
     for(const kind of ['ventas','compras']) {
