@@ -17,7 +17,7 @@ Prototipo académico para gestionar repuestos de vehículos con **PHP + Bulma + 
 
 1. Instalar PHP 8.1 o superior con `pdo_sqlsrv`, el controlador ODBC de Microsoft y SQL Server.
 2. Crear la base con `TallerRepuestosDB.sql` **solo si no existe**. **El script original borra la base existente: no ejecutarlo sobre datos que se quieran conservar.**
-3. Ejecutar las migraciones **001** y **003**, en ese orden. Opcionalmente ejecutar **002** para cargar la historia comercial. Si la base ya existe, ejecutar solo las migraciones pendientes; no volver a crearla. `datos_prueba.sql` es una alternativa pequeña para pruebas, no es necesario cargarlo además de la historia comercial.
+3. Ejecutar las migraciones **001**, **003**, **004** y **005**, en ese orden. Opcionalmente ejecutar **002** para cargar la historia comercial. Si la base ya existe, ejecutar solo las migraciones pendientes; no volver a crearla. `datos_prueba.sql` es una alternativa pequeña para pruebas.
 4. Copiar `taller_repuestos/config.example.php` como `taller_repuestos/config.php` y ajustar la conexión. Para la instancia predeterminada local, usar `server => 'localhost'`; seleccionar la autenticación disponible en ese equipo.
 5. Desde la raíz del repositorio, iniciar el servidor de desarrollo:
 
@@ -39,7 +39,7 @@ Todos los módulos consultan SQL Server. La antigua vista con datos incrustados 
 
 En **Reportes** se puede descargar Excel real (`.xlsx`), CSV o abrir un documento imprimible para guardar como PDF con el navegador. Hay filtros por fecha y búsqueda; cada listado también permite exportar sus filtros actuales. No se exporta únicamente la página visible.
 
-El menú lateral se puede contraer en escritorio y se abre como panel en móvil. Los listados muestran 15 filas por defecto y el selector de cantidad está al pie; existencias e historial muestran 10 por sección con controles independientes.
+El menú muestra únicamente Inicio, Repuestos, Clientes, Proveedores, Compras, Ventas e Inventario e historial. En escritorio se abre al pasar el mouse y el contenido ajusta su ancho; al salir se contrae. El botón Menú fija su apertura y otro clic devuelve el modo automático. En móvil se abre al tocarlo. Cambiar de módulo devuelve la pantalla arriba. Editar abre un formulario superpuesto y conserva filtros/página. La paginación mantiene controles Anterior/Página/Siguiente estables.
 
 Los formularios usan un único buscador con sugerencias para clientes, proveedores y repuestos. Al enfocarlo se pueden recorrer los registros con «Mostrar más»; la búsqueda se filtra desde dos caracteres, con 20 coincidencias por solicitud. La selección admite teclado y ratón y no utiliza un desplegable adicional.
 
@@ -54,5 +54,7 @@ Las instrucciones completas, pruebas y limitaciones están en [taller_repuestos/
 Git guarda el código y los scripts, **no la base activa ni sus registros actuales**. Las compras y ventas realizadas localmente no se publican automáticamente. Para entregar una copia exacta de la base, generar y compartir un respaldo `.bak` por separado.
 
 Los archivos de configuración locales, las credenciales y los respaldos están excluidos mediante `.gitignore`. Para el ejemplo MySQL se incluye `conexion.example.php`, sin contraseña.
+
+La migración **005** agrega respaldos verificados. `taller_repuestos/scripts/instalar_respaldos.ps1` registra una tarea de Windows cada 30 minutos: copia completa cada 24 horas y copias del registro entre ellas. En este equipo ya está instalada y se probó una ejecución automática y una restauración completa con sus registros en una base temporal. La tarea actual requiere sesión de Windows abierta y servicio de datos activo, **no abrir PHP ni la página**. No elimina archivos antiguos ni proporciona una copia fuera del equipo. Detalles y limitaciones en la guía de la aplicación.
 
 Este es un prototipo local sin autenticación de usuarios; no debe exponerse a Internet ni presentarse como un sistema listo para producción.

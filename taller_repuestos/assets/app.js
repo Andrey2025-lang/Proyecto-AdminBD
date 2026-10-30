@@ -5,12 +5,27 @@
     const mobile = window.matchMedia('(max-width: 680px)');
     const sidebar = document.querySelector('#sidebar');
     const toggle = document.querySelector('#sidebar-toggle');
+    const mobileToggle = document.querySelector('#sidebar-mobile-toggle');
     const backdrop = document.querySelector('.sidebar-backdrop');
-    let collapsed = false;
-    try { collapsed = localStorage.getItem('repuesto.sidebar.collapsed') === 'true'; } catch (_) {}
+    let pinned=false;
+    try {pinned=localStorage.getItem('repuesto.sidebar.pinned')==='true';} catch (_) {}
+    let hoverTimer;
+    function expandSidebar() { if (!mobile.matches) { clearTimeout(hoverTimer); document.body.classList.add('sidebar-peek'); syncSidebar(); } }
+    function leaveSidebar(event) {
+        if (sidebar?.contains(event.relatedTarget) || toggle?.contains(event.relatedTarget)) return;
+        clearTimeout(hoverTimer);
+        hoverTimer=setTimeout(()=>{document.body.classList.remove('sidebar-peek');syncSidebar();},160);
+    }
+    [sidebar,toggle].forEach(element=>{
+        element?.addEventListener('pointerenter',expandSidebar);
+        element?.addEventListener('pointerleave',leaveSidebar);
+        element?.addEventListener('focusin',expandSidebar);
+        element?.addEventListener('focusout',leaveSidebar);
+    });
     function syncSidebar() {
         const open = document.body.classList.contains('sidebar-open');
-        document.body.classList.toggle('sidebar-collapsed', !mobile.matches && collapsed);
+        const expanded=pinned||document.body.classList.contains('sidebar-peek');
+        document.body.classList.toggle('sidebar-collapsed', !mobile.matches && !expanded);
         if (sidebar) {
             sidebar.inert = mobile.matches && !open;
             sidebar.setAttribute('aria-hidden', String(mobile.matches && !open));
@@ -19,22 +34,32 @@
         const workspace = document.querySelector('.workspace');
         if (workspace) workspace.inert = mobile.matches && open;
         if (toggle) {
-            toggle.setAttribute('aria-expanded', String(mobile.matches ? open : !collapsed));
-            toggle.setAttribute('aria-label', mobile.matches ? (open ? 'Cerrar menú' : 'Abrir menú') : (collapsed ? 'Expandir menú' : 'Contraer menú'));
+            toggle.setAttribute('aria-expanded', String(mobile.matches ? open : expanded));
+            toggle.setAttribute('aria-label', mobile.matches ? (open ? 'Cerrar menú' : 'Abrir menú') : (pinned ? 'Soltar menú fijo' : 'Fijar menú abierto'));
+            toggle.setAttribute('aria-pressed',String(!mobile.matches&&pinned));
+            toggle.title=pinned?'Soltar menú fijo':'Fijar menú abierto';
+            toggle.querySelector('span').textContent=pinned?'Menú fijo':'Fijar menú';
         }
+        mobileToggle?.setAttribute('aria-expanded',String(mobile.matches&&open));
+        mobileToggle?.setAttribute('aria-label',open?'Cerrar menú':'Abrir menú');
     }
-    function closeSidebar() { document.body.classList.remove('sidebar-open'); syncSidebar(); }
+    function closeSidebar() { document.body.classList.remove('sidebar-open','sidebar-peek'); syncSidebar(); }
     toggle?.addEventListener('click', () => {
         if (mobile.matches) document.body.classList.toggle('sidebar-open');
         else {
-            collapsed = !collapsed;
-            try { localStorage.setItem('repuesto.sidebar.collapsed', String(collapsed)); } catch (_) {}
+            pinned=!pinned;
+            try {localStorage.setItem('repuesto.sidebar.pinned',String(pinned));} catch (_) {}
+            if(!pinned)document.body.classList.remove('sidebar-peek');
         }
         syncSidebar();
         if (mobile.matches && document.body.classList.contains('sidebar-open')) sidebar.querySelector('a')?.focus();
     });
-    backdrop?.addEventListener('click', () => { closeSidebar(); toggle?.focus(); });
-    document.querySelector('.sidebar-close')?.addEventListener('click', () => { closeSidebar(); toggle?.focus(); });
+    mobileToggle?.addEventListener('click',()=>{
+        document.body.classList.toggle('sidebar-open');syncSidebar();
+        if(document.body.classList.contains('sidebar-open'))sidebar.querySelector('a')?.focus();
+    });
+    backdrop?.addEventListener('click', () => { closeSidebar(); mobileToggle?.focus(); });
+    document.querySelector('.sidebar-close')?.addEventListener('click', () => { closeSidebar(); mobileToggle?.focus(); });
     sidebar?.addEventListener('click', event => { if (event.target.closest('a') && mobile.matches) closeSidebar(); });
     mobile.addEventListener('change', closeSidebar);
     syncSidebar();
@@ -47,7 +72,7 @@
         const sale = part.dataset.operation === 'sale';
         if (!sale && changed === part && priceInput) priceInput.value = part.value ? part.dataset.price : '0.00';
         const price = sale ? Number(part.dataset.price || 0) : Number(priceInput?.value || 0);
-        document.querySelector('#total-preview').textContent = format.format(price * Number(quantity.value || 0));
+        if (!document.querySelector('.cart-editor')) document.querySelector('#total-preview').textContent = format.format(price * Number(quantity.value || 0));
         document.querySelector('#stock-hint').textContent = part.value
             ? `Existencias: ${part.dataset.stock} unidades.${sale ? ` Precio unitario: ${format.format(price)}` : ''}`
             : 'Seleccione una referencia para consultar sus existencias.';
@@ -68,7 +93,7 @@
         const clear = widget.querySelector('.autocomplete-clear');
         const state = { items: [], page: 0, term: '', active: -1, open: false, controller: null, sequence: 0, timer: null, loading: false };
         widgets.set(widget, state);
-        input.setCustomValidity(hidden.value ? '' : 'Busque y seleccione una opción de la lista.');
+        input.setCustomValidity(hidden.value || !input.required ? '' : 'Busque y seleccione una opción de la lista.');
         function close() {
             state.open = false; menu.hidden = true;
             input.setAttribute('aria-expanded', 'false'); input.removeAttribute('aria-activedescendant');
@@ -85,11 +110,13 @@
         }
         function open() { state.open = true; menu.hidden = false; input.setAttribute('aria-expanded', 'true'); positionMenu(); }
         function clearSelection() {
-            hidden.value = ''; hidden.dataset.price = ''; hidden.dataset.stock = '';
+            hidden.value = ''; hidden.dataset.price = ''; hidden.dataset.stock = ''; hidden.dataset.label = ''; hidden.dataset.code = '';
             input.removeAttribute('aria-activedescendant'); state.active = -1;
-            clear.hidden = true; input.setCustomValidity('Busque y seleccione una opción de la lista.');
+            clear.hidden = true; input.setCustomValidity(input.required||input.value.trim()?'Busque y seleccione una opción de la lista.':'');
             if (hidden.id === 'id_repuesto') refreshEstimate(hidden);
         }
+        state.reset=()=>{ state.controller?.abort(); clearTimeout(state.timer); state.sequence++; input.value=''; clearSelection(); close(); };
+        widget.addEventListener('reset-selection',()=>state.reset());
         function activate(index) {
             const options = list.querySelectorAll('[role=option]');
             state.active = index;
@@ -102,6 +129,7 @@
         function choose(item) {
             state.controller?.abort(); clearTimeout(state.timer); state.sequence++;
             hidden.value = String(item.id); input.value = item.label;
+            hidden.dataset.label=item.label; hidden.dataset.code=item.codigo_barras||'';
             if (hidden.id === 'id_repuesto') {
                 hidden.dataset.price = item[widget.dataset.operation === 'sale' ? 'precio_venta' : 'precio_compra'];
                 hidden.dataset.stock = String(item.stock_actual);
@@ -117,7 +145,7 @@
                 option.id = `${list.id}-${index}`; option.setAttribute('role', 'option'); option.setAttribute('aria-selected', 'false');
                 const label = document.createElement('strong'); label.textContent = item.label; option.append(label);
                 const detail = document.createElement('small');
-                detail.textContent = widget.dataset.lookup === 'repuestos'
+                detail.textContent = widget.dataset.lookup.startsWith('repuestos')
                     ? `${item.codigo_barras} · ${item.stock_actual} unidades · ${format.format(Number(item[widget.dataset.operation === 'sale' ? 'precio_venta' : 'precio_compra']))}`
                     : (item.cedula ? `Identificación: ${item.cedula}` : 'Proveedor');
                 option.append(detail);
@@ -197,18 +225,41 @@
     });
     document.addEventListener('keydown', event => {
         if (!mobile.matches || !document.body.classList.contains('sidebar-open')) return;
-        if (event.key === 'Escape') { closeSidebar(); toggle?.focus(); }
+        if (event.key === 'Escape') { closeSidebar(); mobileToggle?.focus(); }
         if (event.key === 'Tab') {
-            const links = [...sidebar.querySelectorAll('a,button')]; const first = links[0], last = links.at(-1);
+            const links = [...sidebar.querySelectorAll('a,button')].filter(el=>el.getClientRects().length); const first = links[0], last = links.at(-1);
             if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
             else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
         }
     });
     document.addEventListener('input', event => { if (['cantidad', 'precio_unitario'].includes(event.target.id)) refreshEstimate(event.target); });
+    let pagerPosition=null;
+    document.body.addEventListener('htmx:beforeRequest',event=>{
+        const control=event.detail.elt?.closest('.pager-direction,.pager-jump');
+        const pager=control?.closest('.pager');
+        if(!pager){pagerPosition=null;return;}
+        const table=pager.closest('.panel-card')?.querySelector('.table-container');
+        pagerPosition={label:pager.getAttribute('aria-label'),height:table?.getBoundingClientRect().height||0,top:pager.getBoundingClientRect().top};
+    });
+    document.body.addEventListener('htmx:afterSwap',event=>{
+        if(event.detail.target?.id!=='content'||!pagerPosition)return;
+        const saved=pagerPosition;pagerPosition=null;
+        const pager=[...document.querySelectorAll('.pager')].find(el=>el.getAttribute('aria-label')===saved.label);
+        const table=pager?.closest('.panel-card')?.querySelector('.table-container');
+        if(table)table.style.minHeight=`${saved.height}px`;
+        if(pager)window.scrollBy({top:pager.getBoundingClientRect().top-saved.top,behavior:'instant'});
+    });
     document.body.addEventListener('htmx:beforeSwap', event => {
         if ([422, 503].includes(event.detail.xhr.status)) { event.detail.shouldSwap = true; event.detail.isError = false; }
     });
     document.body.addEventListener('htmx:afterSettle', updateNav);
+    document.body.addEventListener('htmx:afterSettle', event => {
+        if (event.detail.target?.id==='content' && event.detail.requestConfig?.elt?.closest('.nav-link')) {
+            window.scrollTo({top:0,left:0,behavior:'instant'});
+            document.querySelector('#content')?.focus({preventScroll:true});
+            closeSidebar();
+        }
+    });
     document.body.addEventListener('htmx:pushedIntoHistory', updateNav);
     document.body.addEventListener('htmx:historyRestore', updateNav);
     document.body.addEventListener('htmx:beforeCleanupElement', event => {

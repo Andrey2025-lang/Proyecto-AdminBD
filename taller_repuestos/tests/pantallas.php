@@ -40,7 +40,7 @@ $_SESSION = ['csrf'=>'token-de-prueba'];
 $count = 0;
 foreach ([true, false] as $empty) {
     foreach (['inicio','repuestos','clientes','proveedores','compras','ventas','inventario','reportes'] as $page) {
-        $_GET = ['edit'=>'1', 'detail'=>'1', 'q'=>'Filtro'];
+        $_GET = ['edit'=>$empty?'0':'1', 'detail'=>'1', 'q'=>'Filtro'];
         ob_start();
         renderPage(new FixtureDatabase($empty), $page);
         $html = ob_get_clean();

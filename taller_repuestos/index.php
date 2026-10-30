@@ -16,6 +16,8 @@ if (!isset($pages[$page])) $page = 'inicio';
 $notice = $_SESSION['notice'] ?? null;
 unset($_SESSION['notice']);
 $error = null;
+$GLOBALS['completedOperation']=$_SESSION['completed_operation']??null;
+unset($_SESSION['completed_operation']);
 $setup = null;
 $db = null;
 if (isset($_GET['preview'])) { header('Location: index.php',true,303); exit; }
@@ -46,6 +48,27 @@ if (isset($_GET['export'])) {
     } catch (InvalidArgumentException $e) { $error=$e->getMessage(); http_response_code(422); }
     catch (Throwable $e) { error_log((string)$e); $error='No se pudo generar el archivo. Intente nuevamente o contacte al administrador.'; http_response_code(500); }
 }
+if(isset($_GET['view_operation'])) {
+    session_write_close();
+    try {
+        if(!$db) throw new RuntimeException('Conexión no disponible.');
+        renderOperationDetail(operationDocument($db,queryText('view_operation',10),queryInteger('id',0)));
+    } catch(Throwable $e) {
+        $status=$e instanceof OperationNotFound?404:($e instanceof InvalidArgumentException?422:503);http_response_code($status);
+        if($status===503)error_log((string)$e);
+        echo '<header class="operation-heading"><h2 id="operation-title">Detalle de operación</h2><button type="button" class="detail-close" data-detail-close aria-label="Cerrar detalle">×</button></header><div class="operation-body"><div class="notification is-warning is-light">'.e($status===503?'No se pudo cargar la operación. Intente nuevamente.':$e->getMessage()).'</div></div>';
+    }
+    exit;
+}
+if(isset($_GET['receipt'])) {
+    session_write_close();$page='reportes';
+    try {
+        if(!$db)throw new RuntimeException('Conexión no disponible.');
+        exportOperation($db,queryText('receipt',10),queryInteger('id',0),queryText('format',10));
+    } catch(OperationNotFound $e){$error=$e->getMessage();http_response_code(404);}
+    catch(InvalidArgumentException $e){$error=$e->getMessage();http_response_code(422);}
+    catch(Throwable $e){error_log((string)$e);$error='No se pudo generar el comprobante.';http_response_code(500);}
+}
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     try {
         if (!is_string($_POST['csrf'] ?? null) || !hash_equals($_SESSION['csrf'], $_POST['csrf'])) {
@@ -56,6 +79,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         header('HX-Push-Url: index.php?page=' . $page);
         if (($_SERVER['HTTP_HX_REQUEST'] ?? '') !== 'true') {
             $_SESSION['notice'] = $notice;
+            $_SESSION['completed_operation']=$GLOBALS['completedOperation'];
             header('Location: index.php?page=' . $page, true, 303);
             exit;
         }
@@ -83,6 +107,10 @@ ob_start();
     catch (InvalidArgumentException $e) { http_response_code(422); echo '<div class="notification is-warning is-light" role="alert">'.e($e->getMessage()).'</div>'; }
     catch (Throwable $e) { error_log((string)$e); http_response_code(503); echo '<div class="notification is-danger is-light" role="alert">No se pudo cargar la información. Intente nuevamente o contacte al administrador.</div>'; }
 endif;
+if($GLOBALS['completedOperation']) {
+    $completed=$GLOBALS['completedOperation'];
+    echo '<span hidden data-open-operation data-kind="'.e($completed['kind']).'" data-id="'.(int)$completed['id'].'"></span>';
+}
 $content = ob_get_clean();
 if ($partial) { echo $content; exit; }
 ?>
@@ -91,16 +119,19 @@ if ($partial) { echo $content; exit; }
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="htmx-config" content='{"historyRestoreAsHxRequest":false}'><title>Repuesto · Gestión del taller</title>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bulma@1.0.4/css/bulma.min.css">
 <link rel="stylesheet" href="assets/app.css?v=<?= filemtime(__DIR__.'/assets/app.css') ?>">
-<script src="../miniframework_cech/miniframework_cech/htmx.min.js" defer></script><script src="assets/app.js?v=<?= filemtime(__DIR__.'/assets/app.js') ?>" defer></script></head>
+<script src="../miniframework_cech/miniframework_cech/htmx.min.js" defer></script><script src="assets/app.js?v=<?= filemtime(__DIR__.'/assets/app.js') ?>" defer></script><script src="assets/operations.js?v=<?= filemtime(__DIR__.'/assets/operations.js') ?>" defer></script><script src="assets/editor.js?v=<?= filemtime(__DIR__.'/assets/editor.js') ?>" defer></script></head>
 <body>
 <aside class="sidebar" id="sidebar"><a class="brand" href="index.php" aria-label="Repuesto · Inicio"><span class="brand-mark">R</span><span class="brand-text">repuesto<span class="brand-dot">.</span><small>GESTIÓN DEL TALLER</small></span></a>
+<button id="sidebar-toggle" class="sidebar-toggle sidebar-pin" type="button" aria-label="Fijar menú abierto" aria-controls="sidebar" aria-expanded="false" aria-pressed="false"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg><span>Fijar menú</span></button>
 <button class="sidebar-close" type="button" aria-label="Cerrar menú">×</button>
 <p class="menu-caption">ESPACIO DE TRABAJO</p><nav aria-label="Menú principal">
-<?php $icons = ['inicio'=>'◫','repuestos'=>'▦','clientes'=>'♙','proveedores'=>'▤','compras'=>'↙','ventas'=>'↗','inventario'=>'≡','reportes'=>'▥']; foreach ($pages as $key => $label): ?>
+<?php $icons = ['inicio'=>'◫','repuestos'=>'▦','clientes'=>'♙','proveedores'=>'▤','compras'=>'↙','ventas'=>'↗','inventario'=>'≡']; foreach (array_intersect_key($pages,$icons) as $key => $label): ?>
 <a class="nav-link <?= $page === $key ? 'active' : '' ?>" href="index.php?page=<?= $key ?>" hx-get="index.php?page=<?= $key ?>" hx-target="#content" hx-push-url="true" data-page="<?= $key ?>" title="<?= e($label) ?>" aria-label="<?= e($label) ?>"><span aria-hidden="true"><?= $icons[$key] ?></span><span class="nav-label"><?= $key === 'inicio' ? 'Inicio' : e($label) ?></span></a>
 <?php endforeach ?></nav><div class="sidebar-footer">Gestión de repuestos<small>Compras, ventas e inventario<br>en un solo lugar.</small></div></aside>
 <button class="sidebar-backdrop" type="button" aria-label="Cerrar menú" hidden></button>
-<div class="workspace"><header class="topbar"><div class="topbar-start"><button id="sidebar-toggle" class="sidebar-toggle" type="button" aria-label="Contraer menú" aria-controls="sidebar" aria-expanded="true"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg></button><span>Administración <span class="muted">/ Taller de repuestos</span></span></div></header>
+<div class="workspace"><header class="topbar"><div class="topbar-start"><button id="sidebar-mobile-toggle" class="sidebar-toggle sidebar-mobile-toggle" type="button" aria-label="Abrir menú" aria-controls="sidebar" aria-expanded="false"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg><span>Menú</span></button><span>Administración <span class="muted">/ Taller de repuestos</span></span></div></header>
 <main id="content" tabindex="-1" hx-history-elt><?= $content ?></main><footer class="app-footer">Repuesto <span>Compras · Ventas · Inventario</span></footer></div>
 <div id="loading" class="htmx-indicator" role="status">Procesando…</div>
+<dialog id="operation-detail" class="operation-dialog" aria-labelledby="operation-title"></dialog>
+<dialog id="record-editor" class="operation-dialog edit-dialog" aria-labelledby="edit-title"></dialog>
 </body></html>

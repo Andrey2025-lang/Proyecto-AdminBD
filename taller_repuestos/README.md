@@ -15,14 +15,15 @@ Se verificaron las siete pantallas contra SQL Server y el flujo real desde HTTP:
 - Inicio con indicadores reales y alertas de existencias.
 - Repuestos: búsqueda, alta, edición, categorías y desactivación.
 - Clientes y proveedores: búsqueda, alta y edición.
-- Compras: recepción transaccional, total calculado en servidor e incremento de existencias por trigger.
-- Ventas: precio obtenido del catálogo en el servidor, vendedor seleccionado, procedimiento almacenado y control de existencias.
-- Listado y detalle de compras y ventas, existencias e historial de entradas y salidas.
+- Compras y ventas de varios repuestos: carrito editable, hasta 100 partidas, total calculado en servidor y confirmación completa o reversión de toda la operación.
+- Ventas: precio obtenido del catálogo en el servidor, detección de cambios de precio, vendedor seleccionado, procedimiento almacenado y control acumulado de existencias.
+- Detalle de compras y ventas en ventana superpuesta con partidas, totales y comprobante individual en Excel o impresión/PDF.
 - Formularios con validación, consultas parametrizadas, escape HTML y token CSRF.
 - Comprobación previa de códigos de barras y cédulas repetidos, incluso al editar (se permite conservar el valor del propio registro). SQL Server mantiene sus restricciones UNIQUE como protección final ante peticiones simultáneas.
 - Categorías repetidas rechazadas por la aplicación y la base: se ignoran mayúsculas/minúsculas y espacios al inicio/final. Las tildes se conservan como diferencia según la intercalación española configurada. Referencias a categorías, clientes y proveedores comprobadas antes de guardar. Los precios, cantidades, longitudes y estados también se validan en el servidor.
 - Protección de reenvíos de compras y ventas mediante claves de formulario firmadas y un registro transaccional en la base. Reenviar una operación confirmada no vuelve a modificar existencias ni historial, incluso desde conexiones simultáneas. Una operación nueva con los mismos datos sigue siendo válida.
-- Menú lateral plegable con preferencia guardada en escritorio y panel superpuesto accesible en móvil.
+- Menú lateral automático al pasar el mouse, con ajuste del ancho del contenido. El botón Menú permite fijarlo abierto y conserva esa preferencia. En móvil funciona al tocarlo. Solo se muestran los siete módulos originales; Reportes, Usuarios, Categorías y respaldos no agregan accesos al menú.
+- Edición de repuestos, clientes y proveedores en ventana superpuesta: errores dentro del formulario y actualización del listado conservando filtros/página. Cambiar de módulo devuelve la pantalla al inicio; paginar conserva la zona de navegación.
 - Paginación predeterminada de 15 filas, con selector al pie; existencias e historial tienen 10 por sección y controles independientes.
 - Reportes Excel `.xlsx`, CSV y documento imprimible para guardar como PDF. Filas, metadatos y totales se consultan de forma consistente desde la base.
 
@@ -58,6 +59,12 @@ sqlcmd -S localhost -E -C -b -f 65001 -i '.\taller_repuestos\sql\001_control_dup
 
 Ejecute también `sql/003_indices_historial.sql`. Agrega índices según las consultas reales y hace que las entradas/salidas del historial usen la fecha del encabezado de compra/venta, sin modificar movimientos existentes ni desactivar triggers.
 
+Ejecute `sql/004_operaciones_multiples.sql` después de 001 y 003. Añade `id_operacion` a las constancias de envío y crea `sp_ProcesarVentaMultiple`, sin eliminar el procedimiento original ni alterar registros anteriores. Requiere SQL Server 2016 o posterior y compatibilidad de base 130 o superior para `OPENJSON`. Ya se aplicó localmente:
+
+```powershell
+sqlcmd -S localhost -E -C -b -f 65001 -i '.\taller_repuestos\sql\004_operaciones_multiples.sql'
+```
+
 Para cargar el negocio con historia, ejecute `sql/002_carga_historica.sql` **después de 001 y 003**. Sus cantidades configurables por defecto son: 5.000 clientes, 2.000 repuestos, 4 vendedores, 15 proveedores, 15.000 ventas y 1.500 compras. Son registros adicionales a los existentes. El lote ya está cargado localmente para el período 2024-10-29 a 2026-10-29.
 
 La carga construye los datos en SQL, no en PHP/JavaScript, utiliza bloques de inserción dentro de una transacción, mantiene las restricciones y triggers activos y verifica que el saldo nunca sea negativo en orden cronológico. Una marca en `RP15_CARGAS_DATOS` impide repetirla; si cambia las cantidades del mismo lote, se detiene. Las colisiones con clientes, vendedores, proveedores o códigos preexistentes también la detienen sin sobrescribirlos.
@@ -91,7 +98,7 @@ Copy-Item '.\taller_repuestos\config.example.php' '.\taller_repuestos\config.php
 - Para autenticación SQL, use `integrated_auth => false` y configure `username` y `password` de un usuario con acceso a esta base. No utilice `sa` como cuenta de aplicación.
 - En instancias con puerto fijo, `server` puede ser `localhost,1433`.
 - `trust_server_certificate` es una facilidad para desarrollo local; en producción se debe validar el certificado.
-- La cuenta necesita consultar/insertar/actualizar los catálogos, consultar transacciones e historial, registrar compras, consultar/insertar `RP14_SOLICITUDES_OPERACION`, ejecutar el procedimiento de venta y permisos suficientes para los triggers según la configuración de SQL Server.
+- La cuenta necesita consultar/insertar/actualizar los catálogos, consultar transacciones e historial, registrar compras, consultar/insertar/actualizar `RP14_SOLICITUDES_OPERACION`, ejecutar `sp_ProcesarVentaMultiple` y permisos suficientes para los triggers según la configuración de SQL Server.
 
 ## 4. Abrir el prototipo
 
@@ -121,7 +128,9 @@ Para detener el servidor: `Ctrl+C` en su terminal. El servidor integrado de PHP 
 ## Alcance y decisiones
 
 - Es una aplicación interna local, **sin inicio de sesión**. Elegir un vendedor no autentica a una persona. No se presenta como lista para producción.
-- Cada nueva compra o venta permite un repuesto; el procedimiento original de venta acepta una sola referencia. El detalle muestra todas las líneas de operaciones existentes, incluida la compra inicial de demostración.
+- Cada compra o venta permite hasta 100 partidas. Seleccione un repuesto, cantidad y precio de compra si corresponde, pulse **Agregar a la operación** y repita. Las cantidades y precios de compra del carrito se pueden corregir antes de confirmar. En ventas, el precio lo determina el catálogo, no el navegador. Las ventas agrupan repuestos repetidos; las compras agrupan repuesto y precio iguales y conservan partidas de distinto costo. El servidor valida cantidades acumuladas, stock, referencias, precios y límite total antes de confirmar un solo encabezado. Si falla una partida, revierte encabezado, detalles, historial y clave de envío.
+- Los bloqueos de productos se adquieren en orden de ID. El procedimiento nuevo recibe las partidas como JSON y mantiene los triggers como única fuente de cambios de stock. El procedimiento original se conserva para compatibilidad, pero la aplicación usa el nuevo.
+- El botón **Ver detalle** abre una ventana sin abandonar el listado ni perder filtros o página. Puede cerrarse con Escape, el botón de cierre o el fondo. Después de confirmar se abre el comprobante de la operación; el reenvío recupera la misma referencia.
 - No se permite editar/anular/eliminar compras o ventas confirmadas. Los triggers originales solo manejan INSERT, no reversiones. Agregar anulaciones requiere diseñar movimientos compensatorios.
 - Repuestos nuevos empiezan con cero unidades. No se edita stock manualmente; se registra una compra. Los precios de compra y venta del catálogo se editan explícitamente; recibir una compra no cambia automáticamente esos precios.
 - Los listados consultan solo la página solicitada, con 15 filas por defecto y opciones 15/30/50/100 al pie. Inventario e historial empiezan con 10 filas cada uno y ofrecen 10/15/30/50 de forma independiente (`tam` y `htam`). Los tamaños antiguos de 25 se aceptan por compatibilidad con enlaces previos, pero no son el valor predeterminado. El orden se estabiliza por nombre/fecha más ID; entre solicitudes distintas los registros pueden desplazarse si alguien inserta o modifica datos. Las búsquedas de nombres admiten coincidencias internas; no se promete una búsqueda indexada por prefijo cuando se usa `%texto%`.
@@ -136,17 +145,48 @@ Para detener el servidor: `Ctrl+C` en su terminal. El servidor integrado de PHP 
 
 ## Descargar información
 
-Abrir **Reportes**, seleccionar el tipo de informe, sus fechas y el formato. También hay botones **Descargar Excel** e **Imprimir / PDF** en cada listado, que conservan sus filtros y exportan todos los resultados, no solo la página actual.
+Abrir **Reportes**, seleccionar el tipo de informe, sus fechas y el formato. También hay botones **Descargar Excel** e **Imprimir / PDF** en los listados comerciales y de inventario, que conservan sus filtros y exportan todos los resultados, no solo la página actual. Clientes y proveedores no ofrecen exportación masiva de directorios.
+
+- **Ventas y compras:** importes y número de operaciones calculados desde encabezados para no duplicar totales al tener varias partidas. Incluyen resumen mensual, resultados por vendedor/proveedor y primeros 20 repuestos por unidades, obtenidos desde detalles. CSV conserva el listado de operaciones; los resúmenes adicionales están en Excel e impresión.
+- **Reposición:** repuestos activos con stock menor o igual al mínimo. Sugiere unidades para llegar al mínimo más uno y estima el costo al precio de compra actual, no como cotización garantizada.
+- **Kardex:** exige seleccionar un repuesto, también permite referencias inactivas. Ordena movimientos por fecha e ID, con entrada, salida y saldo después de cada movimiento; Excel e impresión añaden saldos anterior al primero y posterior al último. Los saldos se reconstruyen anclados en el stock actual, considerando todos sus movimientos antes de aplicar las fechas. No inventa un saldo inicial cero ni oculta diferencias causadas por ajustes manuales fuera de la aplicación.
+- **Comprobante individual:** desde el detalle de compra o venta, descarga Excel o abre la impresión para guardar como PDF. Incluye datos de contraparte, responsable cuando corresponde, cantidades, precios registrados y total. Si las partidas no coinciden con el encabezado, muestra una advertencia y rechaza emitir el documento.
 
 - **Excel:** archivo `.xlsx` real con hojas **Resumen** y **Datos**. Incluye tabla nativa verde, filas alternadas, encabezados y primera columna inmovilizados, autofiltros, fechas nativas, anchos de columna y configuración de impresión. Los importes son números y las cédulas/códigos son texto. En compras y ventas, el resumen muestra operaciones, importe y promedio por mes y vendedor/proveedor; inventario se agrupa por categoría y movimientos por mes. El total visible de la tabla usa una fórmula SUBTOTAL generada por el sistema y conserva su valor calculado al emitir el archivo. La hoja Resumen mantiene los totales del conjunto exportado. La compresión ZIP es incremental; no se construye todo el libro en memoria ni requiere Composer.
 - **CSV:** UTF-8 con BOM y separador `;`, compatible con Excel. Se neutralizan textos que puedan interpretarse como fórmulas. En XLSX se utilizan cadenas explícitas, nunca fórmulas procedentes de datos.
 - **Documento:** HTML de impresión con marca, fecha de emisión, filtros, tarjetas de indicadores, resúmenes y tablas con bandas verdes. Los encabezados se repiten al imprimir y los importes se alinean a la derecha. En el navegador pulsar **Imprimir / Guardar PDF** y seleccionar guardar como PDF. No es una descarga de PDF generada por el servidor ni un archivo Word. CSV no admite estilos visuales.
-- Compras, ventas y movimientos aceptan fecha inicial y final **inclusivas**. Clientes y catálogo no tienen fecha de creación en el modelo y no se filtran por un dato inexistente. Inventario muestra existencias actuales, no un saldo retrospectivo; las fechas del módulo filtran únicamente su historial.
+- Compras, ventas, movimientos y kardex aceptan fecha inicial y final **inclusivas**. El catálogo no tiene fecha de creación y no se filtra por un dato inexistente. Inventario y reposición muestran existencias actuales, no un saldo retrospectivo; las fechas del módulo filtran únicamente su historial.
 - Máximo 100.000 filas en Excel/CSV y 5.000 en impresión. Si se excede, se pide reducir filtros: no se entrega un reporte truncado silenciosamente. Los reportes vacíos también son válidos.
 - Conteo, totales y filas se leen en una transacción SERIALIZABLE para evitar discrepancias por cambios simultáneos. Puede bloquear brevemente operaciones concurrentes mientras se construye el archivo temporal; la transacción termina **antes** de enviarlo al navegador. El archivo se genera por filas, sin cargar toda la exportación en memoria, y se elimina al cerrar la descarga.
 - Son documentos informativos: no facturas ni certificaciones contables con firma digital. No se implementó inicio de sesión; no exponer la aplicación a Internet.
 
-## Estructura
+## Respaldos automáticos
+
+1. Aplicar `sql/005_respaldos.sql` después de las otras migraciones. Agrega historial y procedimiento; no borra datos ni modifica el procedimiento original del profesor.
+2. Ejecutar `scripts/instalar_respaldos.ps1` desde PowerShell. Usa autenticación de Windows y registra la tarea **Repuesto-RespaldoAutomatico** cada 30 minutos. Si la tarea ya existe se detiene, sin sobrescribirla.
+3. Ejecutar `scripts/respaldo.ps1` para la primera copia. Las siguientes ejecuciones generan un completo si no hay uno verificado en las últimas 24 horas; de lo contrario respaldan el registro de transacciones. Requiere permisos de respaldo y verificación en la instancia.
+
+Los archivos tienen fecha, hora e identificador único y se guardan en la carpeta de respaldo de la instancia, no en el proyecto. Cada archivo usa compresión, CHECKSUM y RESTORE VERIFYONLY. `RP16_RESPALDOS` conserva resultados y errores; `RP17_CONFIG_RESPALDOS` registra la instalación, no garantiza que la tarea siga habilitada. Para comprobar el estado real:
+
+```powershell
+Get-ScheduledTask -TaskName Repuesto-RespaldoAutomatico
+Get-ScheduledTaskInfo -TaskName Repuesto-RespaldoAutomatico
+sqlcmd -S localhost -E -C -b -d TallerRepuestosDB -Q "SELECT TOP(10) inicio,fin,tipo,estado FROM dbo.RP16_RESPALDOS ORDER BY id_respaldo DESC"
+```
+
+**Instalación local:** tarea registrada y ejecución automática comprobada con resultado 0. El Agente de SQL estaba detenido y esta sesión no podía iniciarlo; por eso se utilizó el Programador de tareas de Windows. La tarea usa la sesión interactiva del usuario: necesita que Windows tenga esa sesión abierta y el servicio SQL esté activo, pero no requiere navegador ni PHP. Después de una suspensión intenta ejecutar tareas pendientes. No funciona con el equipo apagado o la sesión cerrada. Para ejecución sin sesión hace falta configurar una cuenta de servicio o el Agente con permisos de administrador; no se guardan contraseñas en scripts.
+
+No se eliminan copias automáticamente: un registro puede depender de archivos anteriores. Hay que definir almacenamiento y retención antes de depurarlos. Esta copia en el mismo equipo **no protege contra perder el equipo/disco**; aún se necesita una segunda copia externa protegida. No subir `.bak` ni `.trn` a GitHub. Si mueve la carpeta del proyecto, debe actualizar la ruta de la tarea. La restauración completa necesita un completo y todos los registros posteriores necesarios, incluidos los generados por cualquier otro mecanismo de respaldo.
+
+Prueba real, con permisos administrativos:
+
+```powershell
+sqlcmd -S localhost -E -C -b -f 65001 -i '.\taller_repuestos\tests\restauracion.sql'
+```
+
+Restaura el último completo y sus registros posteriores verificados en una base temporal con nombre único, ejecuta DBCC CHECKDB y elimina únicamente esa base temporal. Nunca reemplaza la base del negocio. Ya se comprobó localmente. VERIFYONLY valida el archivo, no sustituye esta prueba de restauración.
+
+## Estructura de archivos
 
 ```text
 taller_repuestos/
@@ -155,6 +195,7 @@ taller_repuestos/
   src/Database.php        Conexión y consultas
   src/Actions.php         Validación y operaciones transaccionales
   src/OperationRequests.php Claves de formulario y protección de reenvíos
+  src/Operations.php      Detalle y comprobantes individuales
   src/Views.php           Pantallas y formularios
   src/Queries.php         Filtros, consultas paginadas y búsquedas acotadas
   src/Reports.php         Exportaciones y lectura consistente de reportes
@@ -162,10 +203,17 @@ taller_repuestos/
   src/XlsxWriter.php      Libro Excel por filas, sin dependencias externas
   assets/app.css          Diseño responsivo
   assets/app.js           Estimación de totales y navegación
+  assets/operations.js    Carritos y ventanas de detalle
+  assets/editor.js        Formularios de edición superpuestos
+  src/Presentation.php   Formatos compartidos y nombres sencillos
   sql/datos_prueba.sql     Datos ficticios sin borrar tablas
   sql/001_control_duplicidad.sql Migración incremental, sin recrear la base
   sql/002_carga_historica.sql Generador de datos sintéticos con marca de lote
   sql/003_indices_historial.sql Índices y fechas de movimientos
+  sql/004_operaciones_multiples.sql Procedimiento de venta de varios repuestos
+  sql/005_respaldos.sql   Respaldos completos y del registro con verificación
+  scripts/respaldo.ps1    Ejecución fuera de PHP
+  scripts/instalar_respaldos.ps1 Registro de tarea de Windows
   tests/validaciones.php  Pruebas locales sin base de datos
 ```
 
@@ -178,6 +226,8 @@ Get-ChildItem '.\taller_repuestos' -Filter *.php -Recurse | ForEach-Object { & '
 & 'C:\php\php.exe' '.\taller_repuestos\tests\catalogos.php'
 & 'C:\php\php.exe' '.\taller_repuestos\tests\duplicidad.php'
 node --check '.\taller_repuestos\assets\app.js'
+node --check '.\taller_repuestos\assets\operations.js'
+node --check '.\taller_repuestos\assets\editor.js'
 python '.\taller_repuestos\tests\paginacion.py'
 python '.\taller_repuestos\tests\reportes.py'
 python '.\taller_repuestos\tests\rendimiento.py'
@@ -188,7 +238,9 @@ Para una prueba integral hace falta la instancia real: comprobar compras, ventas
 
 `tests/catalogos.php` requiere la conexión SQL Server configurada. Prueba altas y ediciones, códigos y cédulas duplicados, categorías inválidas y validaciones de campos. Crea sus propios registros dentro de una transacción y los revierte al terminar, sin conservar datos de prueba ni cambiar las existencias actuales. Las identidades de SQL Server pueden avanzar aunque la transacción se revierta; los saltos en los ID son normales.
 
-`tests/duplicidad.php` requiere la migración aplicada y un vendedor activo. Crea registros propios `TEST-*`, comprueba categorías desde SQL directo, reenvíos, firmas inválidas, corrección tras errores y dos conexiones PHP independientes enviando simultáneamente la misma compra/venta. Al terminar elimina únicamente los IDs y claves generados por esa ejecución. No modifica las existencias de los repuestos existentes; las identidades pueden avanzar.
+`tests/duplicidad.php` requiere las migraciones aplicadas y un vendedor activo. Crea registros propios `TEST-*`, comprueba categorías, reenvíos, firmas, corrección tras errores y dos conexiones PHP simultáneas. También verifica varias partidas, cantidades acumuladas, distintos precios de compra, comprobantes, cambios de precio y reversión completa cuando falla una partida. Al terminar elimina únicamente los IDs y claves generados por esa ejecución. No modifica las existencias de los repuestos existentes; las identidades pueden avanzar.
+
+Con el servidor local activo, `php tests/duplicidad.php --http` (o la ruta completa de PHP y del archivo desde la raíz) añade el envío real de compras y ventas múltiples con cookie, CSRF y claves obtenidas de los formularios. Verifica la referencia para abrir el detalle y el reenvío sin duplicar; limpia igualmente sus datos propios.
 
 Los errores de restricciones de SQL Server se interpretan por su código nativo (`PDOException::errorInfo[1]`), no buscando números en el texto del mensaje. Así, un código duplicado muestra «Ya existe un repuesto con ese código de barras», en lugar de un error genérico de conexión.
 
@@ -200,9 +252,11 @@ python '.\taller_repuestos\tests\integracion.py' --confirmar-escritura
 
 **Esta prueba escribe en la base:** cada ejecución agrega una compra de 5 filtros y una venta de 3, por lo que las existencias aumentan en 2. Usa los registros DEMO, requiere el servidor PHP en el puerto 8080 y no elimina información. Las ventas rechazadas no deben agregar encabezados, detalles ni movimientos.
 
-Las pruebas Python de paginación, reportes y rendimiento son de solo lectura. `reportes.py` valida ZIP/XML del Excel, filas y totales contra SQL Server, CSV, impresión, archivos vacíos y filtros inválidos. `carga_historica.sql` verifica saldos cronológicos, inventario y subtotales.
+Las pruebas Python de paginación, reportes y rendimiento son de solo lectura. `reportes.py` valida ZIP/XML del Excel, filas y totales contra SQL Server, CSV, impresión, archivos vacíos, comprobantes individuales, restricciones de exportación y saldo final del kardex. `carga_historica.sql` verifica saldos cronológicos, inventario y subtotales.
 
-`tests/interfaz.mjs` comprueba el comportamiento real en un navegador Edge/Chrome iniciado para pruebas con CDP en el puerto 9327. Requiere Node con WebSocket nativo (22 o superior), no paquetes npm. Verifica menú plegable y móvil, tamaños de filas, búsquedas con mínimo de dos caracteres, «Mostrar más», teclado, invalidación de selecciones y documento imprimible. Es de solo lectura: no envía formularios POST. Puede recibir un directorio como argumento para guardar capturas. Ejecutar las pruebas de lectura cuando hayan terminado las pruebas que insertan y limpian datos temporales, para no comparar páginas sobre un conjunto que está cambiando.
+`tests/interfaz.mjs` comprueba el comportamiento real en un navegador Edge/Chrome iniciado para pruebas con CDP en el puerto 9327. Requiere Node con WebSocket nativo (22 o superior), no paquetes npm. Verifica menú plegable y móvil, tamaños de filas, búsquedas, teclado, invalidación de selecciones, carritos editables, rechazo de cantidades excesivas, ventanas de compra/venta con conservación de filtros y devolución del foco, enlaces a comprobantes y documento imprimible. Es de solo lectura: no envía formularios POST. Puede recibir un directorio para guardar capturas. Ejecutar las pruebas de lectura cuando hayan terminado las pruebas que insertan y limpian datos temporales.
+
+`tests/edicion.mjs` prueba el guardado real desde la ventana de edición, un rechazo por cédula duplicada y la conservación de filtros/página. Requiere el mismo navegador CDP, `sqlcmd` y el servidor PHP. Crea 16 clientes propios con prefijo aleatorio `UI-*` y los elimina al terminar; no edita clientes existentes. Ejecute esta prueba antes de las pruebas de solo lectura.
 
 ### Medición local de referencia
 

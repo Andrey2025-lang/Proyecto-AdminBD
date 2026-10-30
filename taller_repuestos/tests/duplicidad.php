@@ -5,6 +5,7 @@ declare(strict_types=1);
 if (PHP_SAPI !== 'cli') { http_response_code(404); exit; }
 require dirname(__DIR__) . '/src/Database.php';
 require dirname(__DIR__) . '/src/Actions.php';
+require dirname(__DIR__) . '/src/Operations.php';
 
 if (($argv[1] ?? '') === '--worker') {
     $input = json_decode(base64_decode($argv[2]), true, 512, JSON_THROW_ON_ERROR);
@@ -18,7 +19,7 @@ $db = database();
 $_SESSION = ['operation_secret'=>bin2hex(random_bytes(32))];
 $prefix = 'TEST-' . bin2hex(random_bytes(5));
 $tokens = [];
-$category = $part = $client = $supplier = null;
+$category = $part = $second = $client = $supplier = null;
 $passed = 0;
 function verifyDuplicate(bool $ok, string $label): void
 {
@@ -135,6 +136,71 @@ try {
     $after = snapshotDuplicate($db,$part);
     verifyDuplicate((int)$after['stock_actual'] === 9 && (int)$after['compras'] === 3 && (int)$after['movimientos'] === 6,
         'dos conexiones simultáneas generan una sola compra y una sola entrada');
+
+    executePost($db,['action'=>'part','id'=>0,'codigo_barras'=>$prefix.'B','nombre'=>$prefix.' B','id_categoria'=>$category,
+        'precio_compra'=>'5.00','precio_venta'=>'15.00','stock_minimo'=>0,'estado'=>'ACTIVO']);
+    $second=(int)rows($db,'SELECT id_repuesto FROM RP03_REPUESTOS WHERE codigo_barras=?',[$prefix.'B'])[0]['id_repuesto'];
+    $multiple=signedPost(['action'=>'purchase','id_proveedor'=>$supplier,'lines'=>json_encode([
+        ['id_repuesto'=>$part,'cantidad'=>2,'precio_unitario'=>'9.00'],
+        ['id_repuesto'=>$part,'cantidad'=>3,'precio_unitario'=>'10.00'],
+        ['id_repuesto'=>$second,'cantidad'=>8,'precio_unitario'=>'5.00']])]);
+    executePost($db,$multiple); $purchaseId=$GLOBALS['completedOperation']['id'];
+    $doc=operationDocument($db,'compras',$purchaseId);
+    verifyDuplicate(count($doc['lines'])===3 && $doc['consistent'] && (float)$doc['header']['total']===88.0,'una compra con tres partidas, dos repuestos y total correcto');
+    verifyDuplicate((int)snapshotDuplicate($db,$part)['stock_actual']===14 && (int)snapshotDuplicate($db,$second)['stock_actual']===8,'entrada acumulada de partidas del mismo repuesto');
+    $multiple=signedPost(['action'=>'sale','id_cliente'=>$client,'id_vendedor'=>$seller,'lines'=>json_encode([
+        ['id_repuesto'=>$part,'cantidad'=>2,'precio_esperado'=>'20.00'],
+        ['id_repuesto'=>$second,'cantidad'=>3,'precio_esperado'=>'15.00'],
+        ['id_repuesto'=>$part,'cantidad'=>1,'precio_esperado'=>'20.00']])]);
+    executePost($db,$multiple);$saleId=$GLOBALS['completedOperation']['id'];
+    $doc=operationDocument($db,'ventas',$saleId);
+    verifyDuplicate(count($doc['lines'])===2 && $doc['units']===6 && $doc['consistent'] && (float)$doc['header']['total']===105.0,'una venta agrupa repuestos repetidos y conserva cantidades, precios y total');
+    $before=[snapshotDuplicate($db,$part),snapshotDuplicate($db,$second)];
+    verifyDuplicate(str_contains(executePost($db,$multiple),'ya fue registrada') && $GLOBALS['completedOperation']['id']===$saleId,'reenvío múltiple recupera el mismo comprobante');
+    $failed=signedPost(array_replace($multiple,['lines'=>json_encode([
+        ['id_repuesto'=>$part,'cantidad'=>1,'precio_esperado'=>'20.00'],['id_repuesto'=>$second,'cantidad'=>999,'precio_esperado'=>'15.00']])]));
+    expectRejection($db,$failed,'Existencias insuficientes');
+    verifyDuplicate([snapshotDuplicate($db,$part),snapshotDuplicate($db,$second)]===$before,'falta de stock en una partida revierte toda la venta y su historial');
+    expectRejection($db,signedPost(array_replace($multiple,['lines'=>json_encode([
+        ['id_repuesto'=>$part,'cantidad'=>1,'precio_esperado'=>'19.00'],['id_repuesto'=>$second,'cantidad'=>1,'precio_esperado'=>'15.00']])])),'precio cambió');
+    expectRejection($db,signedPost(['action'=>'purchase','id_proveedor'=>$supplier,'lines'=>json_encode([
+        ['id_repuesto'=>$part,'cantidad'=>1,'precio_unitario'=>'1.00'],['id_repuesto'=>$second,'cantidad'=>2,'precio_unitario'=>'99999999.99']])]),'total supera');
+    verifyDuplicate([snapshotDuplicate($db,$part),snapshotDuplicate($db,$second)]===$before,'precio cambiado o compra excesiva no dejan cambios parciales');
+    expectRejection($db,signedPost(array_replace($multiple,['lines'=>'[]'])),'entre 1 y 100');
+    expectRejection($db,signedPost(array_replace($multiple,['lines'=>'{invalido}'])),'lista de repuestos');
+    try {operationDocument($db,'ventas',2147483647);throw new RuntimeException('Se aceptó un comprobante inexistente.');}
+    catch(OperationNotFound $e){verifyDuplicate(true,'comprobante inexistente rechazado');}
+
+    if(in_array('--http',$argv,true)) {
+        // Flujo real con cookie de sesión, CSRF y respuesta parcial de la aplicación.
+        $cookie='';
+        $http=static function(string $page,?array $post=null) use(&$cookie): array {
+            $headers="Cookie: $cookie\r\nHX-Request: true\r\n";
+            if($post!==null)$headers.="Content-Type: application/x-www-form-urlencoded\r\n";
+            $context=stream_context_create(['http'=>['method'=>$post===null?'GET':'POST','header'=>$headers,'content'=>$post===null?'':http_build_query($post),'ignore_errors'=>true,'timeout'=>20]]);
+            $body=file_get_contents('http://127.0.0.1:8080/taller_repuestos/index.php?page='.$page,false,$context);
+            if($body===false)throw new RuntimeException('No se pudo acceder al servidor HTTP de pruebas.');
+            foreach($http_response_header as $header)if(preg_match('/^Set-Cookie:\s*([^;]+)/i',$header,$m))$cookie=$m[1];
+            preg_match('/\s(\d{3})\s/',$http_response_header[0],$status);
+            return [(int)$status[1],$body];
+        };
+        foreach(['purchase'=>'compras','sale'=>'ventas'] as $operation=>$page) {
+            [$status,$html]=$http($page); $fields=[];
+            foreach(['csrf','operation_token','operation_signature'] as $field) {
+                if(!preg_match('/name="'.$field.'" value="([^"]+)"/',$html,$match))throw new RuntimeException('Falta el campo HTTP '.$field);
+                $fields[$field]=html_entity_decode($match[1],ENT_QUOTES,'UTF-8');
+            }
+            $tokens[]=$fields['operation_token'];
+            $fields+=['action'=>$operation,'id_cliente'=>$client,'id_proveedor'=>$supplier,'id_vendedor'=>$seller,
+                'lines'=>json_encode([['id_repuesto'=>$part,'cantidad'=>1,'precio_unitario'=>'10.00','precio_esperado'=>'20.00'],['id_repuesto'=>$second,'cantidad'=>1,'precio_unitario'=>'5.00','precio_esperado'=>'15.00']])];
+            [$status,$html]=$http($page,$fields);
+            verifyDuplicate($status===200 && preg_match('/data-open-operation data-kind="'.$page.'" data-id="(\d+)"/',$html,$match)===1,'HTTP '.$page.' confirma varias partidas y abre su comprobante');
+            $id=(int)$match[1];$doc=operationDocument($db,$page,$id);
+            verifyDuplicate(count($doc['lines'])===2 && $doc['consistent'],'HTTP '.$page.' guarda un encabezado consistente con dos partidas');
+            [$status,$html]=$http($page,$fields);
+            verifyDuplicate($status===200 && str_contains($html,'data-id="'.$id.'"') && str_contains($html,'ya fue registrada'),'HTTP '.$page.' reenvía sin duplicar y recupera la misma referencia');
+        }
+    }
 } finally {
     // Limpieza acotada a los IDs y claves generados por esta ejecución.
     $db->beginTransaction();
@@ -147,9 +213,9 @@ try {
             run($db, 'DELETE FROM RP10_DETALLE_COMPRAS WHERE id_compra IN (SELECT id_compra FROM RP09_COMPRAS WHERE id_proveedor=?)', [$supplier]);
             run($db, 'DELETE FROM RP09_COMPRAS WHERE id_proveedor=?', [$supplier]);
         }
-        if ($part) {
-            run($db, 'DELETE FROM RP11_INVENTARIO_HISTORIAL WHERE id_repuesto=?', [$part]);
-            run($db, 'DELETE FROM RP03_REPUESTOS WHERE id_repuesto=?', [$part]);
+        foreach(array_filter([$part,$second]) as $id) {
+            run($db, 'DELETE FROM RP11_INVENTARIO_HISTORIAL WHERE id_repuesto=?', [$id]);
+            run($db, 'DELETE FROM RP03_REPUESTOS WHERE id_repuesto=?', [$id]);
         }
         if ($category) run($db,'DELETE FROM RP01_CATEGORIAS WHERE id_categoria=?',[$category]);
         if ($client) run($db,'DELETE FROM RP05_CLIENTES WHERE id_cliente=?',[$client]);

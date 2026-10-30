@@ -72,19 +72,19 @@ function excelCell(string $address, $value, string $type='text', int $style=0): 
     // inlineStr impide que textos iniciados con =, +, - o @ sean fórmulas.
     return '<c r="'.$address.'" t="inlineStr" s="'.$style.'"><is><t xml:space="preserve">'.reportXml((string)($value??'')).'</t></is></c>';
 }
-function xlsxSheet(PDOStatement $stmt, array $plan, array $summary, string $title, string $caption, string $generated): Generator
+function xlsxSheet(PDOStatement|iterable $stmt, array $plan, array $summary, string $title, string $caption, string $generated): Generator
 {
     $last=excelColumn(count($plan['columns'])-1);
     yield '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheetPr><pageSetUpPr fitToPage="1"/></sheetPr><sheetViews><sheetView workbookViewId="0" showGridLines="0"><pane xSplit="1" ySplit="5" topLeftCell="B6" activePane="bottomRight" state="frozen"/></sheetView></sheetViews><sheetFormatPr defaultRowHeight="24"/><cols>';
     foreach($plan['columns'] as $i=>[$key,$label,$type]) yield '<col min="'.($i+1).'" max="'.($i+1).'" width="'.($type==='text'?($key==='nombre'||$key==='persona'?62:($key==='motivo'?48:28)):($type==='date'?24:20)).'" customWidth="1"/>';
-    yield '</cols><sheetData><row r="1" ht="38" customHeight="1">'.excelCell('A1','REPUESTO  /  '.$title,'text',1).'</row><row r="2" ht="22" customHeight="1">'.excelCell('A2','Fecha de emisión: '.$generated,'text',12).'</row><row r="3" ht="34" customHeight="1">'.excelCell('A3',$caption,'text',12).'</row><row r="4" ht="28" customHeight="1">'.excelCell('A4','Registros: '.number_format((int)$summary['total']).(isset($summary['importe'])?'    ·    Importe: '.number_format((float)$summary['importe'],2,'.',','):''),'text',12).'</row><row r="5" ht="30" customHeight="1">';
+    yield '</cols><sheetData><row r="1" ht="38" customHeight="1">'.excelCell('A1','REPUESTO  /  '.$title,'text',1).'</row><row r="2" ht="22" customHeight="1">'.excelCell('A2','Fecha de emisión: '.dateLabel($generated),'text',12).'</row><row r="3" ht="34" customHeight="1">'.excelCell('A3',$caption,'text',12).'</row><row r="4" ht="28" customHeight="1">'.excelCell('A4',($summary['record_label']??'Resultados').': '.number_format((int)$summary['total']).(isset($summary['importe'])?'    ·    Monto total: '.number_format((float)$summary['importe'],2,'.',','):''),'text',12).'</row><row r="5" ht="30" customHeight="1">';
     foreach($plan['columns'] as $i=>[$key,$label]) yield excelCell(excelColumn($i).'5',$label,'text',2);
     yield '</row>'; $number=6;
-    while($record=$stmt->fetch(PDO::FETCH_ASSOC)) {
+    foreach(reportRecords($stmt) as $record) {
         yield '<row r="'.$number.'">';
         foreach($plan['columns'] as $i=>[$key,$label,$type]) {
             $style=$number%2===1?match($type){'money'=>8,'int'=>9,'date'=>10,default=>7}:0;
-            yield excelCell(excelColumn($i).$number,$record[$key]??'',$type,$style);
+            yield excelCell(excelColumn($i).$number,reportValue($key,$record[$key]??''),$type,$style);
         }
         yield '</row>'; $number++;
     }
@@ -97,7 +97,7 @@ function xlsxSheet(PDOStatement $stmt, array $plan, array $summary, string $titl
 function xlsxOverview(array $summary, array $blocks, string $title, string $caption, string $generated): Generator
 {
     yield '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetViews><sheetView workbookViewId="0" showGridLines="0"/></sheetViews><sheetFormatPr defaultRowHeight="24"/><cols><col min="1" max="1" width="42" customWidth="1"/><col min="2" max="2" width="20" customWidth="1"/><col min="3" max="5" width="24" customWidth="1"/></cols><sheetData>';
-    yield '<row r="1" ht="42" customHeight="1">'.excelCell('A1','REPUESTO  /  Resumen','text',1).'</row><row r="2">'.excelCell('A2',$title.' · Emitido: '.$generated,'text',12).'</row><row r="3" ht="38" customHeight="1">'.excelCell('A3',$caption,'text',12).'</row><row r="5">'.excelCell('A5','REGISTROS DEL REPORTE','text',12).excelCell('C5',isset($summary['importe'])?'IMPORTE TOTAL DEL PERÍODO':'CONTENIDO','text',12).'</row><row r="6" ht="36" customHeight="1">'.excelCell('A6',$summary['total'],'int',13).excelCell('C6',$summary['importe']??'Consulte la hoja Datos',isset($summary['importe'])?'money':'text',isset($summary['importe'])?14:12).'</row>';
+    yield '<row r="1" ht="42" customHeight="1">'.excelCell('A1','REPUESTO  /  Resumen','text',1).'</row><row r="2">'.excelCell('A2',$title.' · Emitido: '.dateLabel($generated),'text',12).'</row><row r="3" ht="38" customHeight="1">'.excelCell('A3',$caption,'text',12).'</row><row r="5">'.excelCell('A5',$summary['record_label']??'Resultados','text',12).excelCell('C5',isset($summary['importe'])?($summary['amount_label']??'Monto total'):'Contenido','text',12).'</row><row r="6" ht="36" customHeight="1">'.excelCell('A6',$summary['total'],'int',13).excelCell('C6',$summary['importe']??'Consulte la hoja Datos',isset($summary['importe'])?'money':'text',isset($summary['importe'])?14:12).'</row>';
     $number=9; $merges=['A1:E1','A2:E2','A3:E3','A6:B6','C6:E6'];
     foreach($blocks as $block) {
         yield '<row r="'.$number.'" ht="32" customHeight="1">'.excelCell('A'.$number,$block['title'],'text',1).'</row>';
@@ -107,7 +107,7 @@ function xlsxOverview(array $summary, array $blocks, string $title, string $capt
         yield '</row>'; $number++;
         foreach($block['rows'] as $record) {
             yield '<row r="'.$number.'">';
-            foreach($block['columns'] as $i=>[$key,$label,$type]) yield excelCell(excelColumn($i).$number,$record[$key]??'',$type,$number%2?match($type){'money'=>8,'int'=>9,default=>7}:0);
+            foreach($block['columns'] as $i=>[$key,$label,$type]) yield excelCell(excelColumn($i).$number,reportValue($key,$record[$key]??''),$type,$number%2?match($type){'money'=>8,'int'=>9,default=>7}:0);
             yield '</row>'; $number++;
         }
         $number+=2;

@@ -71,6 +71,12 @@ function databaseErrorMessage(Throwable $error, string $action): string
         50001, 50004 => 'Existencias insuficientes para completar la venta.',
         50002 => 'No está configurado el responsable de las compras. Contacte al administrador.',
         50003 => 'La cantidad o el precio indicado no es válido.',
+        50010 => 'Revise los productos, cantidades y precios de la operación.',
+        50011 => 'El cliente seleccionado no existe.',
+        50012 => 'El vendedor seleccionado no está activo.',
+        50013 => 'Un repuesto ya no existe o está inactivo. Retírelo de la lista.',
+        50014 => 'Un precio cambió. Revise los precios actualizados y confirme nuevamente.',
+        50015 => 'El total supera el máximo permitido de 99,999,999.99.',
         default => in_array($action, ['sale', 'purchase'], true)
             ? 'No se pudo completar la operación. Verifique la conexión e intente nuevamente; no se guardaron cambios parciales en la compra o venta.'
             : 'No se pudo guardar el registro. Verifique los datos y la conexión e intente nuevamente.',

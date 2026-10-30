@@ -29,7 +29,7 @@ function queryDate(string $key): string
 function listFilters(): array
 {
     $f = ['q'=>queryText('q'),'size'=>queryInteger('tam',($_GET['page']??'')==='inventario'?10:15),'history_size'=>queryInteger('htam',10),'p'=>queryInteger('p',1),'h'=>queryInteger('h',1),
-        'category'=>queryInteger('categoria',0),'seller'=>queryInteger('vendedor',0),
+        'category'=>queryInteger('categoria',0),'seller'=>queryInteger('vendedor',0),'part'=>queryInteger('repuesto',0),
         'state'=>queryText('estado',20),'level'=>queryText('nivel',20),'type'=>queryText('tipo',20),
         'from'=>queryDate('desde'),'to'=>queryDate('hasta')];
     foreach ([$f['size'],$f['history_size']] as $size) if (!in_array($size,[10,15,25,30,50,100],true)) throw new InvalidArgumentException('Seleccione una cantidad de filas válida: 10, 15, 30, 50 o 100.');
@@ -52,7 +52,7 @@ function queryPlan(string $kind, array $f): array
         $fields = 'R.id_repuesto,R.codigo_barras,R.nombre,R.precio_compra,R.precio_venta,R.stock_actual,R.stock_minimo,R.estado,C.nombre categoria';
         $from = 'dbo.RP03_REPUESTOS R JOIN dbo.RP01_CATEGORIAS C ON C.id_categoria=R.id_categoria';
         $order = 'R.nombre,R.id_repuesto';
-        $columns = [['codigo_barras','Código','text'],['nombre','Repuesto','text'],['categoria','Categoría','text'],['precio_compra','Precio compra','money'],['precio_venta','Precio venta','money'],['stock_actual','Existencias','int'],['stock_minimo','Mínimo','int'],['estado','Estado','text']];
+        $columns = [['codigo_barras','Código','text'],['nombre','Repuesto','text'],['categoria','Categoría','text'],['precio_compra','Precio de compra','money'],['precio_venta','Precio de venta','money'],['stock_actual','Cantidad disponible','int'],['stock_minimo','Cantidad mínima','int'],['estado','Estado','text']];
         if ($f['q'] !== '') { $where[] = "(R.nombre LIKE ? ESCAPE '~' OR R.codigo_barras LIKE ? ESCAPE '~' OR C.nombre LIKE ? ESCAPE '~')"; $params=[likeText($f['q']),likeText($f['q'],true),likeText($f['q'])]; }
         if ($f['category']) { $where[]='R.id_categoria=?'; $params[]=$f['category']; }
         if ($f['state'] !== '') { $where[]='R.estado=?'; $params[]=$f['state']; }
@@ -127,9 +127,9 @@ function paginated(PDO $db, string $kind, array $filters, string $key='p'): arra
 function lookupPlan(string $kind, string $term): array
 {
     $params=[];
-    if ($kind==='repuestos') {
+    if (in_array($kind,['repuestos','repuestos_kardex'],true)) {
         $fields='id_repuesto id,nombre label,codigo_barras,precio_compra,precio_venta,stock_actual'; $table='dbo.RP03_REPUESTOS';
-        $where="estado='ACTIVO'"; $order='nombre,id_repuesto'; $pk='id_repuesto';
+        $where=$kind==='repuestos'?"estado='ACTIVO'":'1=1'; $order='nombre,id_repuesto'; $pk='id_repuesto';
         if ($term!=='') { $where.=" AND (nombre LIKE ? ESCAPE '~' OR codigo_barras LIKE ? ESCAPE '~')"; $params=[likeText($term),likeText($term,true)]; }
     } elseif ($kind==='clientes') {
         $fields='id_cliente id,nombre label,cedula';$table='dbo.RP05_CLIENTES';$where='1=1';$order='nombre,id_cliente';$pk='id_cliente';

@@ -1,6 +1,7 @@
 <?php
 declare(strict_types=1);
 require_once __DIR__ . '/OperationRequests.php';
+require_once __DIR__ . '/Presentation.php';
 
 function textInput(string $key, int $max, bool $required = true): string
 {
@@ -24,12 +25,47 @@ function integerInput(string $key, int $min = 1): int
 
 function centsInput(string $key): int
 {
-    $value = $_POST[$key] ?? '';
+    return moneyCents($_POST[$key]??'');
+}
+function moneyCents($value): int
+{
     if (!is_string($value) || !preg_match('/^\d{1,8}(?:\.\d{1,2})?$/D', $value)) {
         throw new InvalidArgumentException('El precio debe ser positivo o cero, con hasta 8 enteros y 2 decimales.');
     }
     $parts = explode('.', $value);
     return (int)$parts[0] * 100 + (int)str_pad($parts[1] ?? '', 2, '0');
+}
+
+function operationLines(string $action): array
+{
+    if (isset($_POST['lines'])) {
+        if (!is_string($_POST['lines']) || strlen($_POST['lines'])>65536) throw new InvalidArgumentException('La lista de repuestos no es válida.');
+        try { $raw=json_decode($_POST['lines'],true,16,JSON_THROW_ON_ERROR); }
+        catch (JsonException $e) { throw new InvalidArgumentException('La lista de repuestos no es válida.'); }
+    } else {
+        // Compatibilidad con formularios anteriores y clientes de una sola línea.
+        $raw=[['id_repuesto'=>$_POST['id_repuesto']??null,'cantidad'=>$_POST['cantidad']??null,'precio_unitario'=>$_POST['precio_unitario']??null]];
+    }
+    if (!is_array($raw) || !array_is_list($raw) || !$raw || count($raw)>100) throw new InvalidArgumentException('Agregue entre 1 y 100 líneas a la operación.');
+    $lines=[];
+    foreach($raw as $row) {
+        if (!is_array($row)) throw new InvalidArgumentException('Una línea no es válida.');
+        $id=filter_var($row['id_repuesto']??null,FILTER_VALIDATE_INT,['options'=>['min_range'=>1,'max_range'=>2147483647]]);
+        $qty=filter_var($row['cantidad']??null,FILTER_VALIDATE_INT,['options'=>['min_range'=>1,'max_range'=>2147483647]]);
+        if (!$id || !$qty) throw new InvalidArgumentException('Cada repuesto debe tener una cantidad entera positiva.');
+        $cents=$action==='purchase'?moneyCents($row['precio_unitario']??''):null;
+        $expected=$action==='sale' && isset($row['precio_esperado'])?decimal(moneyCents($row['precio_esperado'])):null;
+        $key=$id.':'.($cents??'sale');
+        if (isset($lines[$key])) {
+            if ($lines[$key]['precio_esperado']!==$expected) throw new InvalidArgumentException('Revise el precio del repuesto repetido.');
+            $qty+=$lines[$key]['cantidad'];
+        }
+        if ($qty>2147483647) throw new InvalidArgumentException('La cantidad acumulada de un repuesto supera el máximo permitido.');
+        $lines[$key]=['id_repuesto'=>$id,'cantidad'=>$qty,'precio_unitario'=>$cents===null?null:decimal($cents),'precio_esperado'=>$expected];
+    }
+    $lines=array_values($lines);
+    usort($lines,static fn($a,$b)=>[$a['id_repuesto'],$a['precio_unitario']]<=>[$b['id_repuesto'],$b['precio_unitario']]);
+    return $lines;
 }
 
 function decimal(int $cents): string
@@ -104,7 +140,7 @@ function action(PDO $db): string
         $data = $action === 'client'
             ? ['cedula' => textInput('cedula', 20), 'nombre' => textInput('nombre', 100)]
             : ['nombre_empresa' => textInput('nombre_empresa', 150), 'contacto' => textInput('contacto', 100)];
-        $data['telefono'] = textInput('telefono', 20);
+        $data['telefono'] = phoneLabel(textInput('telefono', 20));
         $data['email'] = $email === '' ? null : $email;
         $id = integerInput('id', 0);
         if ($action === 'client') {
@@ -116,48 +152,61 @@ function action(PDO $db): string
         return 'Registro guardado correctamente.';
     }
     if ($action !== 'sale' && $action !== 'purchase') throw new InvalidArgumentException('Operación desconocida.');
-    $partId = integerInput('id_repuesto');
-    $quantity = integerInput('cantidad');
+    $lines = operationLines($action);
     $token = validateOperationToken($action);
     $counterparty = integerInput($action === 'sale' ? 'id_cliente' : 'id_proveedor');
     $seller = $action === 'sale' ? integerInput('id_vendedor') : null;
-    $cents = $action === 'purchase' ? centsInput('precio_unitario') : null;
     // El precio del catálogo no forma parte de la identidad del envío de venta:
     // puede cambiar después de confirmarlo, sin convertir su reenvío en otra venta.
-    $fingerprint = hash('sha256', json_encode([$action,$partId,$quantity,$counterparty,$seller,$cents], JSON_THROW_ON_ERROR));
+    $identity=array_map(static fn($line)=>[$line['id_repuesto'],$line['cantidad'],$action==='purchase'?$line['precio_unitario']:null],$lines);
+    $fingerprint = hash('sha256', json_encode([$action,$counterparty,$seller,$identity], JSON_THROW_ON_ERROR));
     $db->beginTransaction();
     try {
         if (!claimOperationRequest($db, $token, $action, $fingerprint)) {
+            $previous=rows($db,'SELECT id_operacion FROM RP14_SOLICITUDES_OPERACION WHERE solicitud=?',[$token])[0];
+            if ($previous['id_operacion']) $GLOBALS['completedOperation']=['kind'=>$action==='sale'?'ventas':'compras','id'=>(int)$previous['id_operacion']];
             $db->commit();
             return $action === 'sale' ? 'Esta venta ya fue registrada. No se generó una venta adicional.'
                 : 'Esta compra ya fue registrada. No se generó una compra adicional.';
         }
-        $parts = rows($db, 'SELECT * FROM RP03_REPUESTOS WITH (UPDLOCK, HOLDLOCK) WHERE id_repuesto = ? AND estado = ?', [$partId, 'ACTIVO']);
-        if (!$parts) throw new InvalidArgumentException('Seleccione un repuesto activo.');
         if ($action === 'sale') {
             $client = $counterparty;
             requireReference($db, 'RP05_CLIENTES', 'id_cliente', $client, 'El cliente seleccionado no existe. Seleccione un cliente válido.');
             if (!rows($db, "SELECT usuario_id FROM RP13_USUARIOS WHERE usuario_id = ? AND estado = 'ACTIVO' AND nombre_usuario <> 'sistema'", [$seller])) {
                 throw new InvalidArgumentException('Seleccione un vendedor activo.');
             }
-            $price = (string)$parts[0]['precio_venta'];
-            if ($quantity > (int)$parts[0]['stock_actual']) throw new InvalidArgumentException('Existencias insuficientes para completar la venta.');
-            if ((float)$price * $quantity > 99999999.99) throw new InvalidArgumentException('El total supera el máximo permitido de 99,999,999.99.');
-            run($db, 'EXEC sp_ProcesarVentaTransaccional @id_cliente=?, @id_vendedor=?, @id_repuesto=?, @cantidad=?, @precio_unitario=?',
-                [$client, $seller, $partId, $quantity, $price]);
+            $result=rows($db,'EXEC dbo.sp_ProcesarVentaMultiple @id_cliente=?,@id_vendedor=?,@lineas=?',[$client,$seller,json_encode($lines,JSON_THROW_ON_ERROR)]);
+            $operationId=(int)$result[0]['id_venta'];
         } else {
             $supplier = $counterparty;
             requireReference($db, 'RP02_PROVEEDORES', 'id_proveedor', $supplier, 'El proveedor seleccionado no existe. Seleccione un proveedor válido.');
-            if ($cents * $quantity > 9999999999) throw new InvalidArgumentException('El total supera el máximo permitido de 99,999,999.99.');
-            if ((int)$parts[0]['stock_actual'] + $quantity > 2147483647) throw new InvalidArgumentException('La cantidad excede la capacidad del inventario.');
-            $total = decimal($cents * $quantity);
+            $totals=[]; $amount=0;
+            foreach($lines as $line) $totals[$line['id_repuesto']]=($totals[$line['id_repuesto']]??0)+$line['cantidad'];
+            ksort($totals,SORT_NUMERIC);
+            foreach($totals as $id=>$quantity) {
+                $part=rows($db,"SELECT stock_actual FROM RP03_REPUESTOS WITH(UPDLOCK,HOLDLOCK) WHERE id_repuesto=? AND estado='ACTIVO'",[$id]);
+                if (!$part) throw new InvalidArgumentException('Seleccione un repuesto activo.');
+                if ($quantity+(int)$part[0]['stock_actual']>2147483647) throw new InvalidArgumentException('La cantidad excede la capacidad del inventario.');
+            }
+            foreach($lines as $line) {
+                $cents=moneyCents($line['precio_unitario']);
+                if ($cents && $line['cantidad']>intdiv(9999999999-$amount,$cents)) throw new InvalidArgumentException('El total supera el máximo permitido de 99,999,999.99.');
+                $amount+=$cents*$line['cantidad'];
+            }
+            $total = decimal($amount);
             $purchase = rows($db, "INSERT INTO RP09_COMPRAS (id_proveedor, total, estado) OUTPUT INSERTED.id_compra VALUES (?, ?, 'RECIBIDO')", [$supplier, $total]);
-            run($db, 'INSERT INTO RP10_DETALLE_COMPRAS (id_compra,id_repuesto,cantidad,precio_unitario,subtotal) VALUES (?,?,?,?,?)',
-                [$purchase[0]['id_compra'], $partId, $quantity, decimal($cents), $total]);
+            $operationId=(int)$purchase[0]['id_compra']; $params=[];
+            foreach($lines as $line) array_push($params,$operationId,$line['id_repuesto'],$line['cantidad'],$line['precio_unitario'],decimal(moneyCents($line['precio_unitario'])*$line['cantidad']));
+            run($db,'INSERT INTO RP10_DETALLE_COMPRAS(id_compra,id_repuesto,cantidad,precio_unitario,subtotal) VALUES '.implode(',',array_fill(0,count($lines),'(?,?,?,?,?)')),$params);
         }
+        run($db,'UPDATE RP14_SOLICITUDES_OPERACION SET id_operacion=? WHERE solicitud=?',[$operationId,$token]);
         $db->commit();
+        $GLOBALS['completedOperation']=['kind'=>$action==='sale'?'ventas':'compras','id'=>$operationId];
     } catch (Throwable $e) {
         if ($db->inTransaction()) $db->rollBack();
+        if($e instanceof PDOException && in_array((int)($e->errorInfo[1]??0),[50001,50003,50004,50010,50011,50012,50013,50014,50015],true)) {
+            throw new InvalidArgumentException(databaseErrorMessage($e,$action),0,$e);
+        }
         throw $e;
     }
     return $action === 'sale' ? 'Venta completada. Existencias e historial actualizados.' : 'Compra recibida. Existencias e historial actualizados.';
