@@ -43,6 +43,8 @@ def post(page, payload, expected=200):
     html = get(page)
     token = re.search(r'name="csrf" value="([a-f0-9]+)"', html).group(1)
     payload['csrf'] = token
+    for field in ['operation_token', 'operation_signature']:
+        payload[field] = re.search(r'name="' + field + r'" value="([a-f0-9]+)"', html).group(1)
     request = urllib.request.Request(
         BASE + 'index.php?page=' + page,
         data=urllib.parse.urlencode(payload).encode(),

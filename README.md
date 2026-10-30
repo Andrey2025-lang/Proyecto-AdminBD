@@ -7,6 +7,9 @@ Prototipo académico para gestionar repuestos de vehículos con **PHP + Bulma + 
 - `taller_repuestos/`: aplicación con repuestos, categorías, clientes, proveedores, compras, ventas e historial de inventario.
 - `TallerRepuestosDB.sql`: estructura original de SQL Server, triggers y procedimientos almacenados.
 - `taller_repuestos/sql/datos_prueba.sql`: datos ficticios para preparar una demostración.
+- `taller_repuestos/sql/001_control_duplicidad.sql`: migración incremental para categorías únicas y control de reenvíos de compras y ventas.
+- `taller_repuestos/sql/002_carga_historica.sql`: carga sintética configurable de clientes, catálogo y dos años de compras y ventas.
+- `taller_repuestos/sql/003_indices_historial.sql`: índices para búsquedas/listados y fechas de movimientos tomadas de la operación original.
 - `miniframework_cech/`: ejemplo PHP/MySQL de referencia del profesor; la aplicación nueva utiliza SQL Server, no MySQL.
 - `php_bulma_htmx.pdf`: material de referencia de las tecnologías utilizadas.
 
@@ -14,7 +17,7 @@ Prototipo académico para gestionar repuestos de vehículos con **PHP + Bulma + 
 
 1. Instalar PHP 8.1 o superior con `pdo_sqlsrv`, el controlador ODBC de Microsoft y SQL Server.
 2. Crear la base con `TallerRepuestosDB.sql` **solo si no existe**. **El script original borra la base existente: no ejecutarlo sobre datos que se quieran conservar.**
-3. Ejecutar `taller_repuestos/sql/datos_prueba.sql` para cargar ejemplos.
+3. Ejecutar las migraciones **001** y **003**, en ese orden. Opcionalmente ejecutar **002** para cargar la historia comercial. Si la base ya existe, ejecutar solo las migraciones pendientes; no volver a crearla. `datos_prueba.sql` es una alternativa pequeña para pruebas, no es necesario cargarlo además de la historia comercial.
 4. Copiar `taller_repuestos/config.example.php` como `taller_repuestos/config.php` y ajustar la conexión. Para la instancia predeterminada local, usar `server => 'localhost'`; seleccionar la autenticación disponible en ese equipo.
 5. Desde la raíz del repositorio, iniciar el servidor de desarrollo:
 
@@ -30,7 +33,19 @@ Si PHP no está en el PATH y está instalado en `C:\php`:
 
 Abrir http://127.0.0.1:8080/taller_repuestos/.
 
-Vista previa de solo lectura, sin conexión a la base: http://127.0.0.1:8080/taller_repuestos/index.php?preview=1.
+Todos los módulos consultan SQL Server. La antigua vista con datos incrustados se retiró; `?preview=1` redirige al inicio real.
+
+## Reportes y navegación
+
+En **Reportes** se puede descargar Excel real (`.xlsx`), CSV o abrir un documento imprimible para guardar como PDF con el navegador. Hay filtros por fecha y búsqueda; cada listado también permite exportar sus filtros actuales. No se exporta únicamente la página visible.
+
+El menú lateral se puede contraer en escritorio y se abre como panel en móvil. Los listados muestran 15 filas por defecto y el selector de cantidad está al pie; existencias e historial muestran 10 por sección con controles independientes.
+
+Los formularios usan un único buscador con sugerencias para clientes, proveedores y repuestos. Al enfocarlo se pueden recorrer los registros con «Mostrar más»; la búsqueda se filtra desde dos caracteres, con 20 coincidencias por solicitud. La selección admite teclado y ratón y no utiliza un desplegable adicional.
+
+Excel incluye hojas **Resumen** y **Datos**, tablas verdes con filas alternadas, fechas nativas y totales filtrables. El documento imprimible comparte la paleta verde, resúmenes mensuales y resultados por vendedor/proveedor cuando corresponda. CSV conserva datos y metadatos, pero no admite colores ni estilos.
+
+Los datos de la carga son ficticios, con combinaciones comerciales plausibles. Los documentos, teléfonos y compatibilidades no están verificados y no deben utilizarse para contactar personas ni para seleccionar piezas de reparación reales.
 
 Las instrucciones completas, pruebas y limitaciones están en [taller_repuestos/README.md](taller_repuestos/README.md).
 

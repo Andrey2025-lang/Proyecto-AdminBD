@@ -1,5 +1,6 @@
 <?php
 declare(strict_types=1);
+require_once __DIR__ . '/OperationRequests.php';
 
 function textInput(string $key, int $max, bool $required = true): string
 {
@@ -73,7 +74,9 @@ function action(PDO $db): string
     $action = $_POST['action'] ?? '';
     if ($action === 'category') {
         $name = textInput('nombre', 100);
-        requireUnique($db, 'RP01_CATEGORIAS', 'id_categoria', 'nombre', $name, 0, 'Ya existe una categoría con ese nombre. Selecciónela en la lista.');
+        if (rows($db, 'SELECT TOP (1) id_categoria FROM dbo.RP01_CATEGORIAS WHERE UPPER(LTRIM(RTRIM(nombre))) COLLATE Modern_Spanish_CI_AS = UPPER(LTRIM(RTRIM(?))) COLLATE Modern_Spanish_CI_AS', [$name])) {
+            throw new InvalidArgumentException('Ya existe una categoría con ese nombre. Selecciónela en la lista.');
+        }
         saveRecord($db, 'RP01_CATEGORIAS', 'id_categoria', ['nombre' => $name], 0);
         return 'Categoría registrada.';
     }
@@ -115,27 +118,37 @@ function action(PDO $db): string
     if ($action !== 'sale' && $action !== 'purchase') throw new InvalidArgumentException('Operación desconocida.');
     $partId = integerInput('id_repuesto');
     $quantity = integerInput('cantidad');
+    $token = validateOperationToken($action);
+    $counterparty = integerInput($action === 'sale' ? 'id_cliente' : 'id_proveedor');
+    $seller = $action === 'sale' ? integerInput('id_vendedor') : null;
+    $cents = $action === 'purchase' ? centsInput('precio_unitario') : null;
+    // El precio del catálogo no forma parte de la identidad del envío de venta:
+    // puede cambiar después de confirmarlo, sin convertir su reenvío en otra venta.
+    $fingerprint = hash('sha256', json_encode([$action,$partId,$quantity,$counterparty,$seller,$cents], JSON_THROW_ON_ERROR));
     $db->beginTransaction();
     try {
+        if (!claimOperationRequest($db, $token, $action, $fingerprint)) {
+            $db->commit();
+            return $action === 'sale' ? 'Esta venta ya fue registrada. No se generó una venta adicional.'
+                : 'Esta compra ya fue registrada. No se generó una compra adicional.';
+        }
         $parts = rows($db, 'SELECT * FROM RP03_REPUESTOS WITH (UPDLOCK, HOLDLOCK) WHERE id_repuesto = ? AND estado = ?', [$partId, 'ACTIVO']);
         if (!$parts) throw new InvalidArgumentException('Seleccione un repuesto activo.');
         if ($action === 'sale') {
-            $client = integerInput('id_cliente');
+            $client = $counterparty;
             requireReference($db, 'RP05_CLIENTES', 'id_cliente', $client, 'El cliente seleccionado no existe. Seleccione un cliente válido.');
-            $seller = integerInput('id_vendedor');
             if (!rows($db, "SELECT usuario_id FROM RP13_USUARIOS WHERE usuario_id = ? AND estado = 'ACTIVO' AND nombre_usuario <> 'sistema'", [$seller])) {
                 throw new InvalidArgumentException('Seleccione un vendedor activo.');
             }
             $price = (string)$parts[0]['precio_venta'];
             if ($quantity > (int)$parts[0]['stock_actual']) throw new InvalidArgumentException('Existencias insuficientes para completar la venta.');
-            if ((float)$price * $quantity > 99999999.99) throw new InvalidArgumentException('El total excede la capacidad del modelo de datos.');
+            if ((float)$price * $quantity > 99999999.99) throw new InvalidArgumentException('El total supera el máximo permitido de 99,999,999.99.');
             run($db, 'EXEC sp_ProcesarVentaTransaccional @id_cliente=?, @id_vendedor=?, @id_repuesto=?, @cantidad=?, @precio_unitario=?',
                 [$client, $seller, $partId, $quantity, $price]);
         } else {
-            $supplier = integerInput('id_proveedor');
+            $supplier = $counterparty;
             requireReference($db, 'RP02_PROVEEDORES', 'id_proveedor', $supplier, 'El proveedor seleccionado no existe. Seleccione un proveedor válido.');
-            $cents = centsInput('precio_unitario');
-            if ($cents * $quantity > 9999999999) throw new InvalidArgumentException('El total excede la capacidad del modelo de datos.');
+            if ($cents * $quantity > 9999999999) throw new InvalidArgumentException('El total supera el máximo permitido de 99,999,999.99.');
             if ((int)$parts[0]['stock_actual'] + $quantity > 2147483647) throw new InvalidArgumentException('La cantidad excede la capacidad del inventario.');
             $total = decimal($cents * $quantity);
             $purchase = rows($db, "INSERT INTO RP09_COMPRAS (id_proveedor, total, estado) OUTPUT INSERTED.id_compra VALUES (?, ?, 'RECIBIDO')", [$supplier, $total]);

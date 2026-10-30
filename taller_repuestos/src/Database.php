@@ -14,12 +14,14 @@ function database(): PDO
     $dsn = 'sqlsrv:Server=' . $config['server'] . ';Database=' . $config['database']
         . ';Encrypt=1;TrustServerCertificate=' . (!empty($config['trust_server_certificate']) ? '1' : '0');
     try {
-        return new PDO($dsn, !empty($config['integrated_auth']) ? null : $config['username'],
+        $db = new PDO($dsn, !empty($config['integrated_auth']) ? null : $config['username'],
             !empty($config['integrated_auth']) ? null : $config['password'], [
                 PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
                 PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
                 PDO::SQLSRV_ATTR_ENCODING => PDO::SQLSRV_ENCODING_UTF8,
             ]);
+        $db->exec('SET ANSI_NULLS ON; SET ANSI_PADDING ON; SET ANSI_WARNINGS ON; SET ARITHABORT ON; SET CONCAT_NULL_YIELDS_NULL ON; SET QUOTED_IDENTIFIER ON; SET NUMERIC_ROUNDABORT OFF;');
+        return $db;
     } catch (PDOException $e) {
         error_log($e->getMessage());
         throw new RuntimeException('No se pudo conectar con SQL Server. Verifique config.php, la instancia, sus permisos y que exista TallerRepuestosDB.');
@@ -51,6 +53,7 @@ function databaseErrorMessage(Throwable $error, string $action): string
         return match ($action) {
             'part' => 'Ya existe un repuesto con ese código de barras. Use otro código o edite el repuesto existente.',
             'client' => 'Ya existe un cliente con esa cédula. Use otra cédula o edite el cliente existente.',
+            'category' => 'Ya existe una categoría con ese nombre. Selecciónela en la lista.',
             default => 'Ya existe un registro con esos datos únicos. Revise la información.',
         };
     }
@@ -66,7 +69,7 @@ function databaseErrorMessage(Throwable $error, string $action): string
         8115 => 'Uno de los importes o cantidades supera el máximo permitido.',
         1205 => 'Otra operación estaba modificando los mismos datos. Intente nuevamente.',
         50001, 50004 => 'Existencias insuficientes para completar la venta.',
-        50002 => 'Debe existir el usuario técnico sistema para registrar compras.',
+        50002 => 'No está configurado el responsable de las compras. Contacte al administrador.',
         50003 => 'La cantidad o el precio indicado no es válido.',
         default => in_array($action, ['sale', 'purchase'], true)
             ? 'No se pudo completar la operación. Verifique la conexión e intente nuevamente; no se guardaron cambios parciales en la compra o venta.'

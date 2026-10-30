@@ -10,7 +10,7 @@ require __DIR__ . '/src/Views.php';
 
 $_SESSION['csrf'] ??= bin2hex(random_bytes(32));
 $pages = ['inicio' => 'Resumen general', 'repuestos' => 'Repuestos', 'clientes' => 'Clientes',
-    'proveedores' => 'Proveedores', 'compras' => 'Compras', 'ventas' => 'Ventas', 'inventario' => 'Inventario e historial'];
+    'proveedores' => 'Proveedores', 'compras' => 'Compras', 'ventas' => 'Ventas', 'inventario' => 'Inventario e historial','reportes'=>'Reportes'];
 $page = is_string($_GET['page'] ?? null) ? $_GET['page'] : 'inicio';
 if (!isset($pages[$page])) $page = 'inicio';
 $notice = $_SESSION['notice'] ?? null;
@@ -18,15 +18,33 @@ unset($_SESSION['notice']);
 $error = null;
 $setup = null;
 $db = null;
-$preview = ($_GET['preview'] ?? '') === '1' && $_SERVER['REQUEST_METHOD'] === 'GET';
-if ($preview) $page = 'inicio';
+if (isset($_GET['preview'])) { header('Location: index.php',true,303); exit; }
 try {
-    if (!$preview) {
     $db = database();
-    }
 } catch (RuntimeException $e) {
-    $setup = $e->getMessage();
+    error_log($e->getMessage());
+    $setup = 'No se pudo acceder a la información del taller. Revise la configuración de conexión o contacte al administrador.';
     http_response_code(503);
+}
+if (isset($_GET['lookup'])) {
+    session_write_close();
+    try {
+        if (!$db) throw new RuntimeException('Conexión no disponible.');
+        $kind=queryText('lookup',20); $operation=queryText('operation',10);
+        if (!in_array($operation,['sale','purchase'],true)) throw new InvalidArgumentException('Operación inválida.');
+        header('Content-Type: application/json; charset=UTF-8');
+        echo json_encode(lookupPage($db,$kind,queryText('term',100),queryInteger('lp',1)),JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);
+    } catch (Throwable $e) { error_log((string)$e); http_response_code(422); header('Content-Type: application/json; charset=UTF-8'); echo json_encode(['error'=>'No se pudo buscar. Revise el texto e intente nuevamente.']); }
+    exit;
+}
+if (isset($_GET['export'])) {
+    session_write_close();
+    $page='reportes';
+    try {
+        if (!$db) throw new RuntimeException('Conexión no disponible.');
+        exportReport($db,queryText('export',20),queryText('format',10));
+    } catch (InvalidArgumentException $e) { $error=$e->getMessage(); http_response_code(422); }
+    catch (Throwable $e) { error_log((string)$e); $error='No se pudo generar el archivo. Intente nuevamente o contacte al administrador.'; http_response_code(500); }
 }
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     try {
@@ -53,21 +71,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 $partial = ($_SERVER['HTTP_HX_REQUEST'] ?? '') === 'true';
 ob_start();
 ?>
-<div class="page-heading"><div><p class="eyebrow">CONTROL DEL NEGOCIO</p><h1><?= e($pages[$page]) ?></h1></div><span class="tag is-light">Prototipo académico</span></div>
+<div class="page-heading"><div><p class="eyebrow">CONTROL DEL NEGOCIO</p><h1><?= e($pages[$page]) ?></h1></div></div>
 <?php if ($notice): ?><div class="notification is-success is-light" role="status"><?= e($notice) ?></div><?php endif ?>
 <?php if ($error): ?><div class="notification is-danger is-light" role="alert"><?= e($error) ?></div><?php endif ?>
-<?php if ($preview): ?>
-    <div class="notification is-info is-light" role="status"><strong>Vista previa de solo lectura.</strong> Estos son datos ilustrativos, no consultas a SQL Server. Para registrar operaciones, configure la conexión. <a href="index.php">Salir de la vista previa</a></div>
-    <?php dashboardView(['partes'=>24, 'bajos'=>3, 'vendido'=>'185500.00', 'clientes'=>12],
-        [['nombre'=>'Filtro de aceite', 'stock_actual'=>3, 'stock_minimo'=>5], ['nombre'=>'Pastillas de freno', 'stock_actual'=>2, 'stock_minimo'=>4], ['nombre'=>'Bujía de encendido', 'stock_actual'=>4, 'stock_minimo'=>6]],
-        [['id_venta'=>104,'fecha'=>'2026-10-28 14:32','total'=>'42500.00','nombre'=>'María Rodríguez'], ['id_venta'=>103,'fecha'=>'2026-10-28 12:15','total'=>'68000.00','nombre'=>'Carlos Jiménez'], ['id_venta'=>102,'fecha'=>'2026-10-28 10:48','total'=>'31000.00','nombre'=>'Ana Vargas'], ['id_venta'=>101,'fecha'=>'2026-10-28 09:20','total'=>'44000.00','nombre'=>'Luis Méndez']]); ?>
-<?php elseif ($setup): ?>
-    <div class="setup-card"><span class="setup-icon">⚙</span><h2>Conectemos el taller</h2><p><?= e($setup) ?></p>
-    <ol><li>Instale PHP con PDO_SQLSRV y el controlador ODBC de Microsoft.</li><li>Cree la base con el SQL original, solo si todavía no existe.</li><li>Configure <code>config.php</code> y cargue <code>sql/datos_prueba.sql</code>.</li></ol>
-    <a class="button is-primary" href="index.php">Volver a comprobar</a> <a class="button is-light" href="index.php?preview=1">Ver diseño de ejemplo</a><p class="help mt-4">La interfaz está lista. Los módulos mostrarán datos reales cuando la conexión esté disponible.</p></div>
+<?php if ($setup): ?>
+    <div class="setup-card"><span class="setup-icon">⚙</span><h2>Conexión no disponible</h2><p><?= e($setup) ?></p>
+    <p class="mt-4 mb-5">La guía de instalación del proyecto contiene los pasos para restablecer el acceso.</p>
+    <a class="button is-primary" href="index.php">Reintentar</a></div>
 <?php elseif ($db):
     try { renderPage($db, $page); }
-    catch (Throwable $e) { error_log((string)$e); http_response_code(503); echo '<div class="notification is-danger is-light" role="alert">No se pudo consultar este módulo. Compruebe que la base contiene las tablas del script TallerRepuestosDB.sql.</div>'; }
+    catch (InvalidArgumentException $e) { http_response_code(422); echo '<div class="notification is-warning is-light" role="alert">'.e($e->getMessage()).'</div>'; }
+    catch (Throwable $e) { error_log((string)$e); http_response_code(503); echo '<div class="notification is-danger is-light" role="alert">No se pudo cargar la información. Intente nuevamente o contacte al administrador.</div>'; }
 endif;
 $content = ob_get_clean();
 if ($partial) { echo $content; exit; }
@@ -76,15 +90,17 @@ if ($partial) { echo $content; exit; }
 <html lang="es" data-theme="light">
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="htmx-config" content='{"historyRestoreAsHxRequest":false}'><title>Repuesto · Gestión del taller</title>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bulma@1.0.4/css/bulma.min.css">
-<link rel="stylesheet" href="assets/app.css">
-<script src="../miniframework_cech/miniframework_cech/htmx.min.js" defer></script><script src="assets/app.js" defer></script></head>
+<link rel="stylesheet" href="assets/app.css?v=<?= filemtime(__DIR__.'/assets/app.css') ?>">
+<script src="../miniframework_cech/miniframework_cech/htmx.min.js" defer></script><script src="assets/app.js?v=<?= filemtime(__DIR__.'/assets/app.js') ?>" defer></script></head>
 <body>
-<aside class="sidebar"><a class="brand" href="index.php"><span class="brand-mark">R</span><span>repuesto<span class="brand-dot">.</span><small>GESTIÓN DEL TALLER</small></span></a>
+<aside class="sidebar" id="sidebar"><a class="brand" href="index.php" aria-label="Repuesto · Inicio"><span class="brand-mark">R</span><span class="brand-text">repuesto<span class="brand-dot">.</span><small>GESTIÓN DEL TALLER</small></span></a>
+<button class="sidebar-close" type="button" aria-label="Cerrar menú">×</button>
 <p class="menu-caption">ESPACIO DE TRABAJO</p><nav aria-label="Menú principal">
-<?php $icons = ['inicio'=>'◫','repuestos'=>'▦','clientes'=>'♙','proveedores'=>'▤','compras'=>'↙','ventas'=>'↗','inventario'=>'≡']; foreach ($pages as $key => $label): ?>
-<a class="nav-link <?= $page === $key ? 'active' : '' ?>" href="index.php?page=<?= $key ?>" hx-get="index.php?page=<?= $key ?>" hx-target="#content" hx-push-url="true" data-page="<?= $key ?>"><span aria-hidden="true"><?= $icons[$key] ?></span><?= $key === 'inicio' ? 'Inicio' : e($label) ?></a>
-<?php endforeach ?></nav><div class="sidebar-footer"><span class="status-dot"></span> SQL Server · PHP<small>Compras, ventas e inventario<br>en un solo lugar.</small></div></aside>
-<div class="workspace"><header class="topbar"><span>Administración <span class="muted">/ Taller de repuestos</span></span><span class="workspace-label">TR <span>Entorno local</span></span></header>
-<main id="content" tabindex="-1" hx-history-elt><?= $content ?></main><footer class="app-footer">Repuesto · Prototipo funcional <span>PHP + Bulma + HTMX</span></footer></div>
+<?php $icons = ['inicio'=>'◫','repuestos'=>'▦','clientes'=>'♙','proveedores'=>'▤','compras'=>'↙','ventas'=>'↗','inventario'=>'≡','reportes'=>'▥']; foreach ($pages as $key => $label): ?>
+<a class="nav-link <?= $page === $key ? 'active' : '' ?>" href="index.php?page=<?= $key ?>" hx-get="index.php?page=<?= $key ?>" hx-target="#content" hx-push-url="true" data-page="<?= $key ?>" title="<?= e($label) ?>" aria-label="<?= e($label) ?>"><span aria-hidden="true"><?= $icons[$key] ?></span><span class="nav-label"><?= $key === 'inicio' ? 'Inicio' : e($label) ?></span></a>
+<?php endforeach ?></nav><div class="sidebar-footer">Gestión de repuestos<small>Compras, ventas e inventario<br>en un solo lugar.</small></div></aside>
+<button class="sidebar-backdrop" type="button" aria-label="Cerrar menú" hidden></button>
+<div class="workspace"><header class="topbar"><div class="topbar-start"><button id="sidebar-toggle" class="sidebar-toggle" type="button" aria-label="Contraer menú" aria-controls="sidebar" aria-expanded="true"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg></button><span>Administración <span class="muted">/ Taller de repuestos</span></span></div></header>
+<main id="content" tabindex="-1" hx-history-elt><?= $content ?></main><footer class="app-footer">Repuesto <span>Compras · Ventas · Inventario</span></footer></div>
 <div id="loading" class="htmx-indicator" role="status">Procesando…</div>
 </body></html>
