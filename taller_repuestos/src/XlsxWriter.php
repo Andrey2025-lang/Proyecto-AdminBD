@@ -66,6 +66,7 @@ function excelCell(string $address, $value, string $type='text', int $style=0): 
         return '<c r="'.$address.'" s="'.($style?:5).'"><v>'.sprintf('%.10F',$serial).'</v></c>';
     }
     if (in_array($type,['money','int'],true)) {
+        $value=preg_replace('/^(-?)\./','${1}0.',(string)$value);
         if (!preg_match('/^-?\d+(?:\.\d+)?$/D',(string)$value)) throw new RuntimeException('El reporte contiene un número inválido.');
         return '<c r="'.$address.'" s="'.($style?:($type==='money'?3:4)).'"><v>'.$value.'</v></c>';
     }
@@ -77,7 +78,7 @@ function xlsxSheet(PDOStatement|iterable $stmt, array $plan, array $summary, str
     $last=excelColumn(count($plan['columns'])-1);
     yield '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheetPr><pageSetUpPr fitToPage="1"/></sheetPr><sheetViews><sheetView workbookViewId="0" showGridLines="0"><pane xSplit="1" ySplit="5" topLeftCell="B6" activePane="bottomRight" state="frozen"/></sheetView></sheetViews><sheetFormatPr defaultRowHeight="24"/><cols>';
     foreach($plan['columns'] as $i=>[$key,$label,$type]) yield '<col min="'.($i+1).'" max="'.($i+1).'" width="'.($type==='text'?($key==='nombre'||$key==='persona'?62:($key==='motivo'?48:28)):($type==='date'?24:20)).'" customWidth="1"/>';
-    yield '</cols><sheetData><row r="1" ht="38" customHeight="1">'.excelCell('A1','REPUESTO  /  '.$title,'text',1).'</row><row r="2" ht="22" customHeight="1">'.excelCell('A2','Fecha de emisión: '.dateLabel($generated),'text',12).'</row><row r="3" ht="34" customHeight="1">'.excelCell('A3',$caption,'text',12).'</row><row r="4" ht="28" customHeight="1">'.excelCell('A4',($summary['record_label']??'Resultados').': '.number_format((int)$summary['total']).(isset($summary['importe'])?'    ·    Monto total: '.number_format((float)$summary['importe'],2,'.',','):''),'text',12).'</row><row r="5" ht="30" customHeight="1">';
+    yield '</cols><sheetData><row r="1" ht="38" customHeight="1">'.excelCell('A1','REPUESTO  /  '.$title,'text',1).'</row><row r="2" ht="22" customHeight="1">'.excelCell('A2','Fecha de emisión: '.dateLabel($generated),'text',12).'</row><row r="3" ht="72" customHeight="1">'.excelCell('A3',$caption,'text',12).'</row><row r="4" ht="28" customHeight="1">'.excelCell('A4',($summary['record_label']??'Resultados').': '.number_format((int)$summary['total']).(isset($summary['importe'])?'    ·    Monto total: '.money($summary['importe']):''),'text',12).'</row><row r="5" ht="44" customHeight="1">';
     foreach($plan['columns'] as $i=>[$key,$label]) yield excelCell(excelColumn($i).'5',$label,'text',2);
     yield '</row>'; $number=6;
     foreach(reportRecords($stmt) as $record) {
@@ -97,8 +98,13 @@ function xlsxSheet(PDOStatement|iterable $stmt, array $plan, array $summary, str
 function xlsxOverview(array $summary, array $blocks, string $title, string $caption, string $generated): Generator
 {
     yield '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetViews><sheetView workbookViewId="0" showGridLines="0"/></sheetViews><sheetFormatPr defaultRowHeight="24"/><cols><col min="1" max="1" width="42" customWidth="1"/><col min="2" max="2" width="20" customWidth="1"/><col min="3" max="5" width="24" customWidth="1"/></cols><sheetData>';
-    yield '<row r="1" ht="42" customHeight="1">'.excelCell('A1','REPUESTO  /  Resumen','text',1).'</row><row r="2">'.excelCell('A2',$title.' · Emitido: '.dateLabel($generated),'text',12).'</row><row r="3" ht="38" customHeight="1">'.excelCell('A3',$caption,'text',12).'</row><row r="5">'.excelCell('A5',$summary['record_label']??'Resultados','text',12).excelCell('C5',isset($summary['importe'])?($summary['amount_label']??'Monto total'):'Contenido','text',12).'</row><row r="6" ht="36" customHeight="1">'.excelCell('A6',$summary['total'],'int',13).excelCell('C6',$summary['importe']??'Consulte la hoja Datos',isset($summary['importe'])?'money':'text',isset($summary['importe'])?14:12).'</row>';
+    yield '<row r="1" ht="42" customHeight="1">'.excelCell('A1','REPUESTO  /  Resumen','text',1).'</row><row r="2">'.excelCell('A2',$title.' · Emitido: '.dateLabel($generated),'text',12).'</row><row r="3" ht="72" customHeight="1">'.excelCell('A3',$caption,'text',12).'</row><row r="5">'.excelCell('A5',$summary['record_label']??'Resultados','text',12).excelCell('C5',isset($summary['importe'])?($summary['amount_label']??'Monto total (CRC)'):'Contenido','text',12).'</row><row r="6" ht="36" customHeight="1">'.excelCell('A6',$summary['total'],'int',13).excelCell('C6',$summary['importe']??'Consulte el detalle',isset($summary['importe'])?'money':'text',isset($summary['importe'])?14:12).'</row>';
     $number=9; $merges=['A1:E1','A2:E2','A3:E3','A6:B6','C6:E6'];
+    foreach($summary['metrics']??[] as $metric) {
+        yield '<row r="'.$number.'" ht="30" customHeight="1">'.excelCell('A'.$number,$metric['label'],'text',12).excelCell('D'.$number,$metric['value'],$metric['type']).'</row>';
+        $merges[]='A'.$number.':C'.$number;$merges[]='D'.$number.':E'.$number;$number++;
+    }
+    if(!empty($summary['metrics']))$number+=2;
     foreach($blocks as $block) {
         yield '<row r="'.$number.'" ht="32" customHeight="1">'.excelCell('A'.$number,$block['title'],'text',1).'</row>';
         $merges[]='A'.$number.':E'.$number; $number++;
@@ -112,7 +118,7 @@ function xlsxOverview(array $summary, array $blocks, string $title, string $capt
         }
         $number+=2;
     }
-    yield '<row r="'.$number.'" ht="34" customHeight="1">'.excelCell('A'.$number,'Documento informativo · Importes en la moneda del negocio.','text',12).'</row></sheetData><mergeCells count="'.count($merges).'">';
+    yield '<row r="'.$number.'" ht="34" customHeight="1">'.excelCell('A'.$number,'Documento informativo · Colones costarricenses (CRC). No acredita pagos ni sustituye una factura.','text',12).'</row></sheetData><mergeCells count="'.count($merges).'">';
     foreach($merges as $merge) yield '<mergeCell ref="'.$merge.'"/>';
     yield '</mergeCells><pageMargins left="0.3" right="0.3" top="0.5" bottom="0.5" header="0.2" footer="0.2"/><pageSetup orientation="landscape" paperSize="9" fitToWidth="1" fitToHeight="0"/></worksheet>';
 }
@@ -122,25 +128,47 @@ function xlsxStyles(): string
     foreach([[0,0,1,0,'left'],[1,0,0,0,'left'],[2,2,0,0,'left'],[0,0,1,164,'right'],[0,0,1,3,'right'],[0,0,1,165,'center'],[2,2,0,164,'right'],[0,3,1,0,'left'],[0,3,1,164,'right'],[0,3,1,3,'right'],[0,3,1,165,'center'],[2,2,0,0,'left'],[3,0,0,0,'left'],[1,3,0,3,'left'],[1,3,0,164,'left']] as [$font,$fill,$border,$format,$align]) {
         $xml.='<xf numFmtId="'.$format.'" fontId="'.$font.'" fillId="'.$fill.'" borderId="'.$border.'" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyNumberFormat="1" applyAlignment="1"><alignment horizontal="'.$align.'" vertical="center" wrapText="1"/></xf>';
     }
+    $xml=str_replace('formatCode="#,##0.00"','formatCode="&quot;₡&quot; #,##0.00"',$xml);
     return $xml.'</cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles><dxfs count="2"><dxf><font><b/><color rgb="FFFFFFFF"/></font><fill><patternFill patternType="solid"><fgColor rgb="FF176F57"/><bgColor indexed="64"/></patternFill></fill></dxf><dxf><fill><patternFill patternType="solid"><fgColor rgb="FFEDF5EF"/><bgColor indexed="64"/></patternFill></fill></dxf></dxfs><tableStyles count="1" defaultTableStyle="RepuestoGreen" defaultPivotStyle="PivotStyleLight16"><tableStyle name="RepuestoGreen" pivot="0" table="1" count="2"><tableStyleElement type="headerRow" dxfId="0"/><tableStyleElement type="firstRowStripe" size="1" dxfId="1"/></tableStyle></tableStyles></styleSheet>';
 }
-function writeWorkbook($file, iterable $sheet, array $plan, array $summary, iterable $overview): void
+function writeWorkbook($file, iterable $sheet, array $plan, array $summary, iterable $overview, array $extraSheets=[],string $dataName='Datos'): void
+{
+    $sheets=[['name'=>$dataName,'content'=>$sheet,'plan'=>$plan,'summary'=>$summary],['name'=>'Resumen','content'=>$overview]];
+    array_push($sheets,...$extraSheets);
+    writeMultiWorkbook($file,$sheets);
+}
+
+function writeMultiWorkbook($file,array $sheets): void
 {
     $zip=new XlsxWriter($file);
-    $table=(int)$summary['total']>0;
-    $zip->entry('[Content_Types].xml','<?xml version="1.0" encoding="UTF-8"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/worksheets/sheet2.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>'.($table?'<Override PartName="/xl/tables/table1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.table+xml"/>':'').'</Types>');
+    $types='<?xml version="1.0" encoding="UTF-8"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>';
+    $relationships='<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="styles" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>';
+    foreach($sheets as $i=>$sheet) {
+        $n=$i+1;
+        $types.='<Override PartName="/xl/worksheets/sheet'.$n.'.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>';
+        if(isset($sheet['plan'])&&(int)$sheet['summary']['total']>0)$types.='<Override PartName="/xl/tables/table'.$n.'.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.table+xml"/>';
+        $relationships.='<Relationship Id="sheet'.$n.'" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet'.$n.'.xml"/>';
+    }
+    $zip->entry('[Content_Types].xml',$types.'</Types>');
     $zip->entry('_rels/.rels','<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>');
-    $zip->entry('xl/workbook.xml','<?xml version="1.0" encoding="UTF-8"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><bookViews><workbookView activeTab="0"/></bookViews><sheets><sheet name="Resumen" sheetId="2" r:id="rId3"/><sheet name="Datos" sheetId="1" r:id="rId1"/></sheets><calcPr calcId="191029" fullCalcOnLoad="1"/></workbook>');
-    $zip->entry('xl/_rels/workbook.xml.rels','<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/><Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet2.xml"/></Relationships>');
+    $workbook='<?xml version="1.0" encoding="UTF-8"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><bookViews><workbookView activeTab="0"/></bookViews><sheets>';
+    // Resumen primero al abrir; los archivos físicos conservan índices estables.
+    $order=[1,0];
+    for($i=2;$i<count($sheets);$i++)$order[]=$i;
+    foreach($order as $i)$workbook.='<sheet name="'.reportXml($sheets[$i]['name']).'" sheetId="'.($i+1).'" r:id="sheet'.($i+1).'"/>';
+    $zip->entry('xl/workbook.xml',$workbook.'</sheets><calcPr calcId="191029" fullCalcOnLoad="1"/></workbook>');
+    $zip->entry('xl/_rels/workbook.xml.rels',$relationships.'</Relationships>');
     $zip->entry('xl/styles.xml',xlsxStyles());
-    $zip->entry('xl/worksheets/sheet1.xml',$sheet);
-    $zip->entry('xl/worksheets/sheet2.xml',$overview);
-    if ($table) {
+    foreach($sheets as $i=>$sheet) {
+        $n=$i+1;$zip->entry('xl/worksheets/sheet'.$n.'.xml',$sheet['content']);
+        if(!isset($sheet['plan'])||(int)$sheet['summary']['total']===0)continue;
+        $plan=$sheet['plan'];$summary=$sheet['summary'];
         $last=excelColumn(count($plan['columns'])-1); $dataEnd=5+(int)$summary['total']; $totals=isset($summary['importe']);
-        $xml='<?xml version="1.0" encoding="UTF-8"?><table xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" id="1" name="DatosReporte" displayName="DatosReporte" ref="A5:'.$last.($dataEnd+($totals?1:0)).'" totalsRowCount="'.($totals?1:0).'" totalsRowShown="'.($totals?1:0).'"><autoFilter ref="A5:'.$last.$dataEnd.'"/><tableColumns count="'.count($plan['columns']).'">';
+        $name='DatosReporte'.($n===1?'':$n);
+        $xml='<?xml version="1.0" encoding="UTF-8"?><table xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" id="'.$n.'" name="'.$name.'" displayName="'.$name.'" ref="A5:'.$last.($dataEnd+($totals?1:0)).'" totalsRowCount="'.($totals?1:0).'" totalsRowShown="'.($totals?1:0).'"><autoFilter ref="A5:'.$last.$dataEnd.'"/><tableColumns count="'.count($plan['columns']).'">';
         foreach($plan['columns'] as $i=>[$key,$label]) $xml.='<tableColumn id="'.($i+1).'" name="'.reportXml($label).'"'.($totals&&$i===0?' totalsRowLabel="Total visible"':($totals&&$i===count($plan['columns'])-1?' totalsRowFunction="sum"':'')).'/>';
-        $zip->entry('xl/tables/table1.xml',$xml.'</tableColumns><tableStyleInfo name="RepuestoGreen" showFirstColumn="0" showLastColumn="0" showRowStripes="1" showColumnStripes="0"/></table>');
-        $zip->entry('xl/worksheets/_rels/sheet1.xml.rels','<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/table" Target="../tables/table1.xml"/></Relationships>');
+        $zip->entry('xl/tables/table'.$n.'.xml',$xml.'</tableColumns><tableStyleInfo name="RepuestoGreen" showFirstColumn="0" showLastColumn="0" showRowStripes="1" showColumnStripes="0"/></table>');
+        $zip->entry('xl/worksheets/_rels/sheet'.$n.'.xml.rels','<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/table" Target="../tables/table'.$n.'.xml"/></Relationships>');
     }
     $zip->finish();
 }

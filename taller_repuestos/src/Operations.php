@@ -65,14 +65,14 @@ function exportOperation(PDO $db, string $kind, int $id, string $format): never
         if(!$doc['consistent']) throw new InvalidArgumentException('No se puede emitir el comprobante: el detalle y el total no coinciden.');
         $generated=rows($db,'SELECT CONVERT(varchar(19),SYSDATETIME(),120) fecha')[0]['fecha'];
         $title='Comprobante interno de '.($sale?'venta ':'compra ').$doc['reference'];
-        $caption='Fecha: '.dateLabel($h['fecha']).' · '.($sale?'Cliente: ':'Proveedor: ').$h['persona'].' · Estado: '.statusLabel($h['estado']);
+        $caption='Colones costarricenses (CRC, ₡) · Fecha: '.dateLabel($h['fecha']).' · '.($sale?'Cliente: ':'Proveedor: ').$h['persona'].' · Estado: '.statusLabel($h['estado']);
         $plan=['columns'=>[['codigo_barras','Código','text'],['nombre','Repuesto','text'],['cantidad','Cantidad','int'],['precio_unitario','Precio unitario','money'],['subtotal','Subtotal','money']]];
         $summary=['total'=>count($doc['lines']),'importe'=>$h['total'],'receipt'=>true,'units'=>$doc['units'],'record_label'=>'Renglones de repuestos','amount_label'=>'Total del comprobante','detail_label'=>'Detalle de repuestos'];
         $details=[['campo'=>'Referencia','dato'=>$doc['reference']],['campo'=>'Fecha','dato'=>dateLabel($h['fecha'])],['campo'=>$sale?'Cliente':'Proveedor','dato'=>$h['persona']],['campo'=>$sale?'Identificación':'Contacto','dato'=>$h['identificacion']],['campo'=>'Teléfono','dato'=>phoneLabel($h['telefono'])],['campo'=>'Estado','dato'=>statusLabel($h['estado'])]];
         if($sale) $details[]=['campo'=>'Vendedor responsable','dato'=>$h['responsable']];
         $blocks=[['title'=>'Datos de la operación','columns'=>[['campo','Campo','text'],['dato','Información','text']],'rows'=>$details]];
         $file=tmpfile(); if($file===false) throw new RuntimeException('No se pudo preparar el archivo.');
-        if($format==='xlsx') writeWorkbook($file,xlsxSheet($doc['lines'],$plan,$summary,$title,$caption,$generated),$plan,$summary,xlsxOverview($summary,$blocks,$title,$caption,$generated));
+        if($format==='xlsx') writeWorkbook($file,xlsxSheet($doc['lines'],$plan,$summary,$title,$caption,$generated),$plan,$summary,xlsxOverview($summary,$blocks,$title,$caption,$generated),[],'Repuestos');
         else writePrintReport($file,$doc['lines'],$plan,$summary,$blocks,$title,$caption,$generated);
         $db->commit(); $size=ftell($file); rewind($file);
         header('Content-Type: '.($format==='xlsx'?'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet':'text/html; charset=UTF-8'));

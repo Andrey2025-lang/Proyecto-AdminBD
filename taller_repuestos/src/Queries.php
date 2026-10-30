@@ -29,7 +29,8 @@ function queryDate(string $key): string
 function listFilters(): array
 {
     $f = ['q'=>queryText('q'),'size'=>queryInteger('tam',($_GET['page']??'')==='inventario'?10:15),'history_size'=>queryInteger('htam',10),'p'=>queryInteger('p',1),'h'=>queryInteger('h',1),
-        'category'=>queryInteger('categoria',0),'seller'=>queryInteger('vendedor',0),'part'=>queryInteger('repuesto',0),
+        'category'=>queryInteger('categoria',0),'seller'=>queryInteger('vendedor',0),'part'=>queryInteger('f_repuesto',queryInteger('repuesto',0)),
+        'client'=>queryInteger('f_cliente',0),'supplier'=>queryInteger('f_proveedor',0),'ref_from'=>queryInteger('referencia_desde',0),'ref_to'=>queryInteger('referencia_hasta',0),
         'state'=>queryText('estado',20),'level'=>queryText('nivel',20),'type'=>queryText('tipo',20),
         'from'=>queryDate('desde'),'to'=>queryDate('hasta')];
     foreach ([$f['size'],$f['history_size']] as $size) if (!in_array($size,[10,15,25,30,50,100],true)) throw new InvalidArgumentException('Seleccione una cantidad de filas válida: 10, 15, 30, 50 o 100.');
@@ -37,6 +38,7 @@ function listFilters(): array
         || !in_array($f['level'],['','bajo','disponible'],true)
         || !in_array($f['type'],['','ENTRADA_COMPRA','SALIDA_VENTA'],true)) throw new InvalidArgumentException('Uno de los filtros seleccionados no es válido.');
     if ($f['from'] !== '' && $f['to'] !== '' && $f['from'] > $f['to']) throw new InvalidArgumentException('La fecha inicial no puede ser posterior a la fecha final.');
+    if($f['ref_from']&&$f['ref_to']&&$f['ref_from']>$f['ref_to'])throw new InvalidArgumentException('El número inicial no puede superar al final.');
     return $f;
 }
 function likeText(string $value, bool $prefix = false): string
@@ -55,6 +57,7 @@ function queryPlan(string $kind, array $f): array
         $columns = [['codigo_barras','Código','text'],['nombre','Repuesto','text'],['categoria','Categoría','text'],['precio_compra','Precio de compra','money'],['precio_venta','Precio de venta','money'],['stock_actual','Cantidad disponible','int'],['stock_minimo','Cantidad mínima','int'],['estado','Estado','text']];
         if ($f['q'] !== '') { $where[] = "(R.nombre LIKE ? ESCAPE '~' OR R.codigo_barras LIKE ? ESCAPE '~' OR C.nombre LIKE ? ESCAPE '~')"; $params=[likeText($f['q']),likeText($f['q'],true),likeText($f['q'])]; }
         if ($f['category']) { $where[]='R.id_categoria=?'; $params[]=$f['category']; }
+        if($f['part']){$where[]='R.id_repuesto=?';$params[]=$f['part'];}
         if ($f['state'] !== '') { $where[]='R.estado=?'; $params[]=$f['state']; }
         if ($f['level'] !== '') $where[]=$f['level']==='bajo' ? 'R.stock_actual<=R.stock_minimo' : 'R.stock_actual>R.stock_minimo';
     } elseif (in_array($kind,['clientes','proveedores'],true)) {
@@ -75,6 +78,14 @@ function queryPlan(string $kind, array $f): array
         if ($f['q']!=='') { $where[]=$sale?"(C.nombre LIKE ? ESCAPE '~' OR C.cedula LIKE ? ESCAPE '~')":"P.nombre_empresa LIKE ? ESCAPE '~'"; $params=[likeText($f['q'])]; if ($sale) $params[]=likeText($f['q'],true); }
         if ($f['state']!=='') { $where[]="$a.estado=?"; $params[]=$f['state']; }
         if ($sale && $f['seller']) { $where[]='V.id_vendedor=?'; $params[]=$f['seller']; }
+        if($sale&&$f['client']){$where[]='V.id_cliente=?';$params[]=$f['client'];}
+        if(!$sale&&$f['supplier']){$where[]='C.id_proveedor=?';$params[]=$f['supplier'];}
+        if($f['part']) {
+            $detail=$sale?'RP08_DETALLE_VENTAS':'RP10_DETALLE_COMPRAS';
+            $where[]="EXISTS(SELECT 1 FROM dbo.$detail FD WHERE FD.$pk=$a.$pk AND FD.id_repuesto=?)";$params[]=$f['part'];
+        }
+        if($f['ref_from']){$where[]="$a.$pk>=?";$params[]=$f['ref_from'];}
+        if($f['ref_to']){$where[]="$a.$pk<=?";$params[]=$f['ref_to'];}
         if ($f['from']!=='') { $where[]="$a.fecha>=CONVERT(date,?)"; $params[]=$f['from']; }
         if ($f['to']!=='') { $where[]="$a.fecha<DATEADD(day,1,CONVERT(date,?))"; $params[]=$f['to']; }
     } elseif ($kind==='historial') {
@@ -84,6 +95,7 @@ function queryPlan(string $kind, array $f): array
         $columns=[['fecha','Fecha','date'],['nombre','Repuesto','text'],['tipo_movimiento','Movimiento','text'],['cantidad','Cantidad','int'],['nombre_usuario','Responsable','text'],['motivo','Motivo','text']];
         if ($f['q']!=='') { $where[]="(R.nombre LIKE ? ESCAPE '~' OR R.codigo_barras LIKE ? ESCAPE '~')"; $params=[likeText($f['q']),likeText($f['q'],true)]; }
         if ($f['category']) { $where[]='R.id_categoria=?'; $params[]=$f['category']; }
+        if($f['part']){$where[]='H.id_repuesto=?';$params[]=$f['part'];}
         if ($f['type']!=='') { $where[]='H.tipo_movimiento=?'; $params[]=$f['type']; }
         if ($f['from']!=='') { $where[]='H.fecha>=CONVERT(date,?)'; $params[]=$f['from']; }
         if ($f['to']!=='') { $where[]='H.fecha<DATEADD(day,1,CONVERT(date,?))'; $params[]=$f['to']; }
@@ -124,10 +136,15 @@ function paginated(PDO $db, string $kind, array $filters, string $key='p'): arra
     return ['items'=>$stmt->fetchAll(),'total'=>$total,'pages'=>$pages,'current'=>$current,'size'=>$size,'key'=>$key,'amount'=>$summary['importe']??null];
 }
 
-function lookupPlan(string $kind, string $term): array
+function lookupPlan(string $kind, string $term,int $supplier=0): array
 {
     $params=[];
-    if (in_array($kind,['repuestos','repuestos_kardex'],true)) {
+    if($kind==='repuestos_compra') {
+        $fields='R.id_repuesto id,R.nombre label,R.codigo_barras,C.costo_referencia precio_compra,R.precio_venta,R.stock_actual';
+        $table='dbo.RP03_REPUESTOS R JOIN dbo.RP19_PROVEEDOR_REPUESTO C ON C.id_repuesto=R.id_repuesto';
+        $where="R.estado='ACTIVO' AND C.estado='ACTIVO' AND C.id_proveedor=?";$params=[$supplier];$order='R.nombre,R.id_repuesto';$pk='R.id_repuesto';
+        if($term!==''){$where.=" AND (R.nombre LIKE ? ESCAPE '~' OR R.codigo_barras LIKE ? ESCAPE '~')";array_push($params,likeText($term),likeText($term,true));}
+    } elseif (in_array($kind,['repuestos','repuestos_kardex'],true)) {
         $fields='id_repuesto id,nombre label,codigo_barras,precio_compra,precio_venta,stock_actual'; $table='dbo.RP03_REPUESTOS';
         $where=$kind==='repuestos'?"estado='ACTIVO'":'1=1'; $order='nombre,id_repuesto'; $pk='id_repuesto';
         if ($term!=='') { $where.=" AND (nombre LIKE ? ESCAPE '~' OR codigo_barras LIKE ? ESCAPE '~')"; $params=[likeText($term),likeText($term,true)]; }
@@ -140,19 +157,19 @@ function lookupPlan(string $kind, string $term): array
     } else throw new InvalidArgumentException('La búsqueda solicitada no existe.');
     return compact('fields','table','where','order','pk','params');
 }
-function lookupItems(PDO $db, string $kind, string $term='', int $selected=0): array
+function lookupItems(PDO $db, string $kind, string $term='', int $selected=0,int $supplier=0): array
 {
-    extract(lookupPlan($kind,$term));
+    extract(lookupPlan($kind,$term,$supplier));
     $items=rows($db,"SELECT TOP (20) $fields FROM $table WHERE $where ORDER BY $order",$params);
     if ($selected && !in_array($selected,array_map('intval',array_column($items,'id')),true)) {
-        $match=rows($db,"SELECT $fields FROM $table WHERE $pk=?".($kind==='repuestos'?" AND estado='ACTIVO'":''),[$selected]);
+        $match=$kind==='repuestos_compra'?rows($db,"SELECT $fields FROM $table WHERE $where AND $pk=?",[...$params,$selected]):rows($db,"SELECT $fields FROM $table WHERE $pk=?".($kind==='repuestos'?" AND estado='ACTIVO'":''),[$selected]);
         if ($match) array_unshift($items,$match[0]);
     }
     return $items;
 }
-function lookupPage(PDO $db, string $kind, string $term, int $page): array
+function lookupPage(PDO $db, string $kind, string $term, int $page,int $supplier=0): array
 {
-    $plan=lookupPlan($kind,$term);
+    $plan=lookupPlan($kind,$term,$supplier);
     if ($page<1 || $page>5000) throw new InvalidArgumentException('La página de búsqueda no es válida.');
     if ($term!=='' && preg_match_all('/./us',$term)<2) return ['items'=>[],'has_more'=>false,'page'=>$page,'minimum'=>2];
     $stmt=queryStatement($db,'SELECT '.$plan['fields'].' FROM '.$plan['table'].' WHERE '.$plan['where'].' ORDER BY '.$plan['order'].' OFFSET ? ROWS FETCH NEXT ? ROWS ONLY',[...$plan['params'],($page-1)*20,21]);

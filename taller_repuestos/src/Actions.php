@@ -2,6 +2,7 @@
 declare(strict_types=1);
 require_once __DIR__ . '/OperationRequests.php';
 require_once __DIR__ . '/Presentation.php';
+require_once __DIR__ . '/SupplierCatalog.php';
 
 function textInput(string $key, int $max, bool $required = true): string
 {
@@ -108,6 +109,7 @@ function requireReference(PDO $db, string $table, string $pk, int $id, string $m
 function action(PDO $db): string
 {
     $action = $_POST['action'] ?? '';
+    if($action==='supplier_part')return saveSupplierPart($db);
     if ($action === 'category') {
         $name = textInput('nombre', 100);
         if (rows($db, 'SELECT TOP (1) id_categoria FROM dbo.RP01_CATEGORIAS WHERE UPPER(LTRIM(RTRIM(nombre))) COLLATE Modern_Spanish_CI_AS = UPPER(LTRIM(RTRIM(?))) COLLATE Modern_Spanish_CI_AS', [$name])) {
@@ -184,6 +186,7 @@ function action(PDO $db): string
             foreach($lines as $line) $totals[$line['id_repuesto']]=($totals[$line['id_repuesto']]??0)+$line['cantidad'];
             ksort($totals,SORT_NUMERIC);
             foreach($totals as $id=>$quantity) {
+                if(!rows($db,"SELECT estado FROM dbo.RP19_PROVEEDOR_REPUESTO WITH(UPDLOCK,HOLDLOCK) WHERE id_proveedor=? AND id_repuesto=? AND estado='ACTIVO'",[$supplier,$id]))throw new InvalidArgumentException('El proveedor no tiene habilitado uno de los repuestos. Revise su catálogo antes de registrar la compra.');
                 $part=rows($db,"SELECT stock_actual FROM RP03_REPUESTOS WITH(UPDLOCK,HOLDLOCK) WHERE id_repuesto=? AND estado='ACTIVO'",[$id]);
                 if (!$part) throw new InvalidArgumentException('Seleccione un repuesto activo.');
                 if ($quantity+(int)$part[0]['stock_actual']>2147483647) throw new InvalidArgumentException('La cantidad excede la capacidad del inventario.');
@@ -204,7 +207,7 @@ function action(PDO $db): string
         $GLOBALS['completedOperation']=['kind'=>$action==='sale'?'ventas':'compras','id'=>$operationId];
     } catch (Throwable $e) {
         if ($db->inTransaction()) $db->rollBack();
-        if($e instanceof PDOException && in_array((int)($e->errorInfo[1]??0),[50001,50003,50004,50010,50011,50012,50013,50014,50015],true)) {
+        if($e instanceof PDOException && in_array((int)($e->errorInfo[1]??0),[50001,50003,50004,50010,50011,50012,50013,50014,50015,50016],true)) {
             throw new InvalidArgumentException(databaseErrorMessage($e,$action),0,$e);
         }
         throw $e;

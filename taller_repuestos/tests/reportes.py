@@ -59,12 +59,28 @@ for kind, table in [('ventas','RP07_VENTAS'),('compras','RP09_COMPRAS')]:
         overview = ET.fromstring(book.read('xl/worksheets/sheet2.xml'))
         assert 'Resumen mensual' in ''.join(overview.itertext())
         assert ('Resultados por vendedor' if kind == 'ventas' else 'Resultados por proveedor') in ''.join(overview.itertext())
+        workbook=ET.fromstring(book.read('xl/workbook.xml'))
+        names=[s.attrib['name'] for s in workbook.findall('x:sheets/x:sheet',NS)]
+        assert names[:2]==['Resumen','Ventas' if kind=='ventas' else 'Compras']
+        assert 'Detalle de repuestos' in names and 'Por repuesto' in names
+        assert ('Por vendedor' if kind=='ventas' else 'Por proveedor') in names
+        assert '₡' in book.read('xl/styles.xml').decode('utf8')
+        for index in [3,4,5]+([6] if kind=='compras' else []):
+            extra=ET.fromstring(book.read(f'xl/worksheets/sheet{index}.xml'))
+            last=extra.findall('x:sheetData/x:row',NS)[-1].findall('x:c',NS)[-1].find('x:v',NS).text
+            assert decimal.Decimal(last)==decimal.Decimal(expected['importe'])
+        relationships=ET.fromstring(book.read('xl/_rels/workbook.xml.rels'))
+        for relation in relationships:
+            assert relation.attrib['Type'].startswith('http://schemas.openxmlformats.org/officeDocument/2006/relationships/')
+            assert 'xl/'+relation.attrib['Target'] in book.namelist()
     print('OK Excel:', kind, expected['total'], 'filas y total', expected['importe'])
 
     response, body = request(dict(params, format='csv'))
     records = list(csv.reader(io.StringIO(body.decode('utf-8-sig')), delimiter=';'))
-    assert len(records) == expected['total'] + 4
-    assert decimal.Decimal(records[-1][1]) == decimal.Decimal(expected['importe'])
+    assert len(records) >= expected['total'] + 1
+    assert len({r[0] for r in records[1:]})==expected['total']
+    assert sum(decimal.Decimal(r[-1]) for r in records[1:]) == decimal.Decimal(expected['importe'])
+    assert records[0][-1].endswith('(CRC)')
     print('OK CSV:', kind, 'filas y total coinciden')
     response, body = request(dict(params, format='print'))
     assert b'window.print()' in body and b'Total del' in body and b'<thead>' in body
@@ -82,7 +98,10 @@ for params in [
     {'export':'ventas','format':'xlsx','desde':'2026-10-20','hasta':'2026-10-01'},
     {'export':'ventas','format':'exe'},
     {'export':'tabla_inventada','format':'xlsx'},
-    {'export':'ventas','format':'print'},
+    {'export':'historial','format':'print'},
+    {'export':'ventas','format':'xlsx','cantidad':'200001'},
+    {'export':'ventas','format':'xlsx','desde_resultado':'2'},
+    {'export':'ventas','format':'xlsx','referencia_desde':'9','referencia_hasta':'3'},
 ]:
     response, body = request(params, 422)
     assert b'Content_Types' not in body
@@ -114,7 +133,7 @@ part=sql_json('SELECT TOP(1) id_repuesto id,stock_actual FROM RP03_REPUESTOS WHE
 _,body=request({'export':'kardex','repuesto':part['id'],'format':'csv'})
 records=list(csv.reader(io.StringIO(body.decode('utf-8-sig')),delimiter=';'))
 assert int(records[-1][4])==part['stock_actual'],records[-1]
-for previous,current in zip(records[3:],records[4:]):
+for previous,current in zip(records[1:],records[2:]):
     assert int(current[4])==int(previous[4])+int(current[2])-int(current[3])
 for format in ['xlsx','print']:
     _,body=request({'export':'kardex','repuesto':part['id'],'format':format})
@@ -129,7 +148,31 @@ request({'export':'kardex','format':'csv'},422)
 print('OK: kardex termina en las existencias actuales y exige un repuesto')
 _,body=request({'export':'reposicion','format':'csv'})
 records=list(csv.reader(io.StringIO(body.decode('utf-8-sig')),delimiter=';'))
-for row in records[3:]:
+for row in records[1:]:
     assert int(row[3])<=int(row[4])
-    assert int(row[5])==int(row[4])-int(row[3])+1
-print('OK: reposición solo incluye faltantes y calcula unidades para superar el mínimo')
+    assert int(row[5])==int(row[4])-int(row[3])
+print('OK: revisión de compras indica faltantes reales, sin recomendar mínimo más uno')
+
+for kind in ['ventas','compras','inventario','historial','reposicion','precios']:
+    params={'preview_export':kind,'format':'xlsx','cantidad':'17','desde_resultado':'4'}
+    _,body=request(params);preview=json.loads(body)
+    assert preview['records']==17,(kind,preview)
+    _,body=request({'export':kind,'format':'xlsx','cantidad':'17','desde_resultado':'4'})
+    with zipfile.ZipFile(io.BytesIO(body)) as book:
+        sheet=ET.fromstring(book.read('xl/worksheets/sheet1.xml'))
+        rows_data=sheet.findall('x:sheetData/x:row',NS)
+        assert len(rows_data)==17+(6 if kind in ['ventas','compras'] else 5)
+        if kind=='precios':
+            headers=' '.join(rows_data[4].itertext()).lower()
+            assert 'compra' not in headers and 'mínima' not in headers and 'precio de venta' in headers
+    print('OK: vista previa y archivo coinciden para selección parcial',kind)
+
+_,body=request({'export':'ventas','format':'xlsx','cantidad':'10','orden':'antiguos','desde_resultado':'1'})
+with zipfile.ZipFile(io.BytesIO(body)) as book:
+    records=ET.fromstring(book.read('xl/worksheets/sheet1.xml')).findall('x:sheetData/x:row',NS)
+    headers=[row.findall('x:c',NS)[0].find('x:is/x:t',NS).text for row in records[5:-1]]
+    detail=ET.fromstring(book.read('xl/worksheets/sheet3.xml')).findall('x:sheetData/x:row',NS)
+    references={row.findall('x:c',NS)[0].find('x:is/x:t',NS).text for row in detail[5:-1]}
+    assert set(headers)==references and len(headers)==10
+    assert min(float(r.findall('x:c',NS)[1].find('x:v',NS).text) for r in records[5:-1])<45000
+print('OK: selección de ventas antiguas conserva todo su detalle, sin cortar operaciones')

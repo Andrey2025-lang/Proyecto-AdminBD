@@ -35,8 +35,43 @@ if (isset($_GET['lookup'])) {
         $kind=queryText('lookup',20); $operation=queryText('operation',10);
         if (!in_array($operation,['sale','purchase'],true)) throw new InvalidArgumentException('Operación inválida.');
         header('Content-Type: application/json; charset=UTF-8');
-        echo json_encode(lookupPage($db,$kind,queryText('term',100),queryInteger('lp',1)),JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);
+        echo json_encode(lookupPage($db,$kind,queryText('term',100),queryInteger('lp',1),queryInteger('proveedor',0)),JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);
     } catch (Throwable $e) { error_log((string)$e); http_response_code(422); header('Content-Type: application/json; charset=UTF-8'); echo json_encode(['error'=>'No se pudo buscar. Revise el texto e intente nuevamente.']); }
+    exit;
+}
+if(isset($_GET['catalog_supplier'])) {
+    try {
+        if(!$db)throw new RuntimeException('Conexión no disponible.');
+        $supplier=queryInteger('catalog_supplier',0);$catalogError=null;$catalogNotice=null;
+        if($_SERVER['REQUEST_METHOD']==='POST') {
+            try {
+                if(!is_string($_POST['csrf']??null)||!hash_equals($_SESSION['csrf'],$_POST['csrf']))throw new InvalidArgumentException('La sesión del formulario venció. Recargue el catálogo.');
+                if(($_POST['action']??'')!=='supplier_part'||integerInput('id_proveedor')!==$supplier)throw new InvalidArgumentException('El proveedor del formulario no coincide.');
+                $catalogNotice=saveSupplierPart($db);
+            } catch(InvalidArgumentException $e){$catalogError=$e->getMessage();http_response_code(422);}
+        }
+        session_write_close();supplierCatalogView($db,$supplier,$catalogError,$catalogNotice);
+    } catch(Throwable $e) {
+        http_response_code($e instanceof InvalidArgumentException?422:503);if(!$e instanceof InvalidArgumentException)error_log((string)$e);
+        echo '<header class="operation-heading"><h2 id="supplier-catalog-title">Repuestos del proveedor</h2><button type="button" class="detail-close" data-supplier-close aria-label="Cerrar catálogo">×</button></header><div class="operation-body">'.e($e instanceof InvalidArgumentException?$e->getMessage():'No se pudo cargar el catálogo. Intente nuevamente.').'</div>';
+    }
+    exit;
+}
+if(isset($_GET['download_form'])||isset($_GET['preview_export'])) {
+    session_write_close();$json=isset($_GET['preview_export']);
+    try {
+        if(!$db)throw new RuntimeException('Conexión no disponible.');
+        if($json) {
+            header('Content-Type: application/json; charset=UTF-8');
+            echo json_encode(previewExport($db,queryText('preview_export',20),queryText('format',10)),JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);
+        } else downloadForm($db,queryText('download_form',20));
+    } catch(Throwable $e) {
+        http_response_code($e instanceof InvalidArgumentException?422:503);
+        if(!$e instanceof InvalidArgumentException)error_log((string)$e);
+        $message=$e instanceof InvalidArgumentException?$e->getMessage():'No se pudo consultar la selección. Intente nuevamente.';
+        if($json){header('Content-Type: application/json; charset=UTF-8');echo json_encode(['error'=>$message],JSON_UNESCAPED_UNICODE);}
+        else echo '<header class="operation-heading"><h2 id="download-title">Descargar información</h2><button type="button" class="detail-close" data-download-close aria-label="Cerrar descargas">×</button></header><div class="operation-body">'.e($message).'</div>';
+    }
     exit;
 }
 if (isset($_GET['export'])) {
@@ -119,7 +154,7 @@ if ($partial) { echo $content; exit; }
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="htmx-config" content='{"historyRestoreAsHxRequest":false}'><title>Repuesto · Gestión del taller</title>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bulma@1.0.4/css/bulma.min.css">
 <link rel="stylesheet" href="assets/app.css?v=<?= filemtime(__DIR__.'/assets/app.css') ?>">
-<script src="../miniframework_cech/miniframework_cech/htmx.min.js" defer></script><script src="assets/app.js?v=<?= filemtime(__DIR__.'/assets/app.js') ?>" defer></script><script src="assets/operations.js?v=<?= filemtime(__DIR__.'/assets/operations.js') ?>" defer></script><script src="assets/editor.js?v=<?= filemtime(__DIR__.'/assets/editor.js') ?>" defer></script></head>
+<script src="../miniframework_cech/miniframework_cech/htmx.min.js" defer></script><script src="assets/app.js?v=<?= filemtime(__DIR__.'/assets/app.js') ?>" defer></script><script src="assets/operations.js?v=<?= filemtime(__DIR__.'/assets/operations.js') ?>" defer></script><script src="assets/editor.js?v=<?= filemtime(__DIR__.'/assets/editor.js') ?>" defer></script><script src="assets/downloads.js?v=<?= filemtime(__DIR__.'/assets/downloads.js') ?>" defer></script></head>
 <body>
 <aside class="sidebar" id="sidebar"><a class="brand" href="index.php" aria-label="Repuesto · Inicio"><span class="brand-mark">R</span><span class="brand-text">repuesto<span class="brand-dot">.</span><small>GESTIÓN DEL TALLER</small></span></a>
 <button id="sidebar-toggle" class="sidebar-toggle sidebar-pin" type="button" aria-label="Fijar menú abierto" aria-controls="sidebar" aria-expanded="false" aria-pressed="false"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg><span>Fijar menú</span></button>
@@ -134,4 +169,7 @@ if ($partial) { echo $content; exit; }
 <div id="loading" class="htmx-indicator" role="status">Procesando…</div>
 <dialog id="operation-detail" class="operation-dialog" aria-labelledby="operation-title"></dialog>
 <dialog id="record-editor" class="operation-dialog edit-dialog" aria-labelledby="edit-title"></dialog>
+<dialog id="download-dialog" class="operation-dialog edit-dialog" aria-labelledby="download-title"></dialog>
+<dialog id="supplier-catalog" class="operation-dialog" aria-labelledby="supplier-catalog-title"></dialog>
+<script src="assets/supplier-catalog.js?v=<?= filemtime(__DIR__.'/assets/supplier-catalog.js') ?>" defer></script>
 </body></html>

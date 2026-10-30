@@ -63,5 +63,5 @@
         const rect=dialog.getBoundingClientRect();
         if(event.clientX<rect.left||event.clientX>rect.right||event.clientY<rect.top||event.clientY>rect.bottom)dialog.close();
     });
-    dialog.addEventListener('close',()=>{controller?.abort();document.body.classList.remove('detail-open');if(opener?.isConnected)opener.focus({preventScroll:true});});
+    dialog.addEventListener('close',()=>{controller?.abort();document.body.classList.toggle('detail-open',!!document.querySelector('dialog[open]'));if(opener?.isConnected&&!document.querySelector('dialog[open]'))opener.focus({preventScroll:true});});
 })();

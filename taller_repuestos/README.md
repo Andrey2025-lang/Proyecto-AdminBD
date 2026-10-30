@@ -15,6 +15,7 @@ Se verificaron las siete pantallas contra SQL Server y el flujo real desde HTTP:
 - Inicio con indicadores reales y alertas de existencias.
 - Repuestos: búsqueda, alta, edición, categorías y desactivación.
 - Clientes y proveedores: búsqueda, alta y edición.
+- Catálogo de cada proveedor: desde Proveedores → Repuestos se habilitan, deshabilitan o dejan pendientes los repuestos que ese proveedor ofrece, con costo de referencia y código propios. Una compra solo admite repuestos habilitados para el proveedor elegido; la regla se comprueba en el servidor y en la base.
 - Compras y ventas de varios repuestos: carrito editable, hasta 100 partidas, total calculado en servidor y confirmación completa o reversión de toda la operación.
 - Ventas: precio obtenido del catálogo en el servidor, detección de cambios de precio, vendedor seleccionado, procedimiento almacenado y control acumulado de existencias.
 - Detalle de compras y ventas en ventana superpuesta con partidas, totales y comprobante individual en Excel o impresión/PDF.
@@ -63,6 +64,12 @@ Ejecute `sql/004_operaciones_multiples.sql` después de 001 y 003. Añade `id_op
 
 ```powershell
 sqlcmd -S localhost -E -C -b -f 65001 -i '.\taller_repuestos\sql\004_operaciones_multiples.sql'
+```
+
+Ejecute `sql/008_catalogo_proveedores.sql` al final. Crea `RP19_PROVEEDOR_REPUESTO`, relaciona los repuestos que cada proveedor ya vendió en la historia y agrega un trigger que impide incluir en una compra un repuesto no habilitado para ese proveedor. Las relaciones importadas del historial quedan **pendientes de confirmar**; solo las del lote sintético se marcan como habilitadas para que los datos de prueba permitan comprar. No modifica compras, detalles ni existencias anteriores:
+
+```powershell
+sqlcmd -S localhost -E -C -b -f 65001 -i '.\taller_repuestos\sql\008_catalogo_proveedores.sql'
 ```
 
 Para cargar el negocio con historia, ejecute `sql/002_carga_historica.sql` **después de 001 y 003**. Sus cantidades configurables por defecto son: 5.000 clientes, 2.000 repuestos, 4 vendedores, 15 proveedores, 15.000 ventas y 1.500 compras. Son registros adicionales a los existentes. El lote ya está cargado localmente para el período 2024-10-29 a 2026-10-29.
@@ -129,13 +136,14 @@ Para detener el servidor: `Ctrl+C` en su terminal. El servidor integrado de PHP 
 
 - Es una aplicación interna local, **sin inicio de sesión**. Elegir un vendedor no autentica a una persona. No se presenta como lista para producción.
 - Cada compra o venta permite hasta 100 partidas. Seleccione un repuesto, cantidad y precio de compra si corresponde, pulse **Agregar a la operación** y repita. Las cantidades y precios de compra del carrito se pueden corregir antes de confirmar. En ventas, el precio lo determina el catálogo, no el navegador. Las ventas agrupan repuestos repetidos; las compras agrupan repuesto y precio iguales y conservan partidas de distinto costo. El servidor valida cantidades acumuladas, stock, referencias, precios y límite total antes de confirmar un solo encabezado. Si falla una partida, revierte encabezado, detalles, historial y clave de envío.
+- En compras, el buscador de repuestos se limita al catálogo habilitado del proveedor elegido. Si cambia el proveedor, los renglones anteriores se marcan para revisarlos y el servidor rechaza la operación completa si alguno no pertenece al nuevo proveedor. La relación se administra en Proveedores → **Repuestos**, sin agregar módulos al menú. El costo de referencia es orientativo: la compra guarda el costo real confirmado y no altera compras anteriores.
 - Los bloqueos de productos se adquieren en orden de ID. El procedimiento nuevo recibe las partidas como JSON y mantiene los triggers como única fuente de cambios de stock. El procedimiento original se conserva para compatibilidad, pero la aplicación usa el nuevo.
 - El botón **Ver detalle** abre una ventana sin abandonar el listado ni perder filtros o página. Puede cerrarse con Escape, el botón de cierre o el fondo. Después de confirmar se abre el comprobante de la operación; el reenvío recupera la misma referencia.
 - No se permite editar/anular/eliminar compras o ventas confirmadas. Los triggers originales solo manejan INSERT, no reversiones. Agregar anulaciones requiere diseñar movimientos compensatorios.
 - Repuestos nuevos empiezan con cero unidades. No se edita stock manualmente; se registra una compra. Los precios de compra y venta del catálogo se editan explícitamente; recibir una compra no cambia automáticamente esos precios.
 - Los listados consultan solo la página solicitada, con 15 filas por defecto y opciones 15/30/50/100 al pie. Inventario e historial empiezan con 10 filas cada uno y ofrecen 10/15/30/50 de forma independiente (`tam` y `htam`). Los tamaños antiguos de 25 se aceptan por compatibilidad con enlaces previos, pero no son el valor predeterminado. El orden se estabiliza por nombre/fecha más ID; entre solicitudes distintas los registros pueden desplazarse si alguien inserta o modifica datos. Las búsquedas de nombres admiten coincidencias internas; no se promete una búsqueda indexada por prefijo cuando se usa `%texto%`.
 - Los buscadores de clientes, proveedores y repuestos son un solo campo con sugerencias, sin segundo selector. Al enfocar se muestran registros paginados de 20 en 20 y «Mostrar más» permite recorrerlos. Desde dos caracteres se filtran por nombre, cédula o código; con uno solo no se consulta la base. Se pueden usar flechas, Enter, Escape, ratón y el botón de limpiar. Modificar el texto invalida el ID anterior, las peticiones viejas se cancelan y el servidor vuelve a comprobar las referencias al guardar. Una selección válida se conserva al corregir un formulario rechazado.
-- Los importes se muestran sin símbolo: el modelo no define una moneda, impuestos ni descuentos.
+- Los importes se muestran en colones costarricenses (CRC, ₡) de forma uniforme en pantallas, comprobantes, reportes y archivos. El modelo no registra impuestos, descuentos ni devoluciones.
 - Compras quedan atribuidas a `sistema` en el historial por diseño del SQL original. Ventas quedan atribuidas al vendedor seleccionado.
 - La tabla de auditoría, respaldos y extracción DW del SQL original no tienen módulo administrativo en esta versión. El historial visible es el inventario, no una auditoría completa.
 - No modificar existencias desde PHP después de insertar un detalle: los triggers ya hacen esa operación.
@@ -198,13 +206,18 @@ taller_repuestos/
   src/Operations.php      Detalle y comprobantes individuales
   src/Views.php           Pantallas y formularios
   src/Queries.php         Filtros, consultas paginadas y búsquedas acotadas
+  src/SupplierCatalog.php Catálogo de repuestos por proveedor
   src/Reports.php         Exportaciones y lectura consistente de reportes
+  src/BusinessReports.php Resúmenes comerciales y análisis de compras
+  src/ExportSelection.php Filtros y vista previa de descargas
   src/ReportLayout.php    Resúmenes y formato del documento imprimible
   src/XlsxWriter.php      Libro Excel por filas, sin dependencias externas
   assets/app.css          Diseño responsivo
   assets/app.js           Estimación de totales y navegación
   assets/operations.js    Carritos y ventanas de detalle
   assets/editor.js        Formularios de edición superpuestos
+  assets/downloads.js     Diálogo de descargas con vista previa
+  assets/supplier-catalog.js Catálogo del proveedor en ventana superpuesta
   src/Presentation.php   Formatos compartidos y nombres sencillos
   sql/datos_prueba.sql     Datos ficticios sin borrar tablas
   sql/001_control_duplicidad.sql Migración incremental, sin recrear la base
@@ -212,6 +225,9 @@ taller_repuestos/
   sql/003_indices_historial.sql Índices y fechas de movimientos
   sql/004_operaciones_multiples.sql Procedimiento de venta de varios repuestos
   sql/005_respaldos.sql   Respaldos completos y del registro con verificación
+  sql/006_indices_reportes.sql Índices para filtros y totales de reportes
+  sql/007_historia_64_diarias.sql Carga de ~64 ventas por día hábil
+  sql/008_catalogo_proveedores.sql Catálogo de repuestos por proveedor
   scripts/respaldo.ps1    Ejecución fuera de PHP
   scripts/instalar_respaldos.ps1 Registro de tarea de Windows
   tests/validaciones.php  Pruebas locales sin base de datos

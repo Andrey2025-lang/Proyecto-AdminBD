@@ -46,7 +46,7 @@ async function screenshot(name) {
 async function type(selector, value) {
     await evaluate(`(() => { const input=document.querySelector(${JSON.stringify(selector)}); input.focus(); input.value=${JSON.stringify(value)}; input.dispatchEvent(new Event('input',{bubbles:true})); })()`);
 }
-const optionSelector = name => `.autocomplete[data-lookup="${name}"] .autocomplete-option`;
+const optionSelector = name => `.autocomplete[data-lookup${name==='repuestos'?'^':''}="${name}"] .autocomplete-option`;
 try {
     await send('Page.enable'); await send('Runtime.enable'); await send('Network.enable');
     await send('Page.bringToFront');
@@ -60,9 +60,18 @@ try {
     assert.equal(await evaluate(`document.querySelector('#sidebar-toggle').closest('#sidebar')!==null`),true);
     assert.equal(await evaluate(`document.querySelector('.topbar #sidebar-toggle')===null`),true);
     const workspaceLeft=await evaluate(`document.querySelector('.workspace').getBoundingClientRect().left`);
+    const iconBefore=await evaluate(`(()=>{const r=document.querySelector('.nav-link>span').getBoundingClientRect();return {left:r.left,top:r.top};})()`);
+    assert.equal(await evaluate(`getComputedStyle(document.querySelector('.sidebar')).transitionDuration===getComputedStyle(document.querySelector('.workspace')).transitionDuration`),true);
+    assert.equal(await evaluate(`getComputedStyle(document.querySelector('.sidebar')).transitionDuration`),'0.3s');
     await send('Input.dispatchMouseEvent',{type:'mouseMoved',x:35,y:180});
     await wait(`document.body.classList.contains('sidebar-peek')`);
     await wait(`document.querySelector('.workspace').getBoundingClientRect().left>${workspaceLeft}+100`);
+    assert.deepEqual(await evaluate(`(()=>{const r=document.querySelector('.nav-link>span').getBoundingClientRect();return {left:r.left,top:r.top};})()`),iconBefore);
+    await send('Input.dispatchMouseEvent',{type:'mouseMoved',x:700,y:140});
+    assert.equal(await evaluate(`document.body.classList.contains('sidebar-peek')`),true);
+    await send('Input.dispatchMouseEvent',{type:'mouseMoved',x:35,y:180});
+    assert.equal(await evaluate(`document.body.classList.contains('sidebar-peek')`),true);
+    await screenshot('menu-fluido');
     await send('Input.dispatchMouseEvent',{type:'mouseMoved',x:700,y:140});
     await wait(`!document.body.classList.contains('sidebar-peek')`);
     console.log('OK navegador: menú abre con el mouse y el contenido se adapta a su ancho');
@@ -100,6 +109,9 @@ try {
 
     await navigate('page=compras');
     assert.equal(await evaluate(`document.querySelector('#id_proveedor').type`), 'hidden');
+    await evaluate(`document.querySelector('#search-id_repuesto').focus()`);
+    await wait(`document.querySelector('.autocomplete[data-lookup=repuestos_compra] .autocomplete-status').textContent.includes('Seleccione primero el proveedor')`);
+    assert.equal(await evaluate(`document.querySelectorAll('${optionSelector('repuestos_compra')}').length`), 0);
     await evaluate(`document.querySelector('#search-id_proveedor').focus()`);
     await wait(`document.querySelectorAll('${optionSelector('proveedores')}').length>0`);
     await type('#search-id_proveedor', 'D');
@@ -117,7 +129,7 @@ try {
     assert.equal(await evaluate(`document.querySelector('#id_proveedor').value`), selectedSupplier);
     await evaluate(`document.querySelector('#search-id_repuesto').focus()`);
     await wait(`document.querySelectorAll('${optionSelector('repuestos')}').length===20`);
-    await evaluate(`document.querySelector('.autocomplete[data-lookup=repuestos] .autocomplete-more').click()`);
+    await evaluate(`document.querySelector('.autocomplete[data-lookup^=repuestos] .autocomplete-more').click()`);
     await wait(`document.querySelectorAll('${optionSelector('repuestos')}').length===40`);
     await type('#search-id_repuesto', 'Hilux');
     await wait(`document.querySelectorAll('${optionSelector('repuestos')}').length>0 && [...document.querySelectorAll('${optionSelector('repuestos')} strong')].every(x=>x.textContent.includes('Hilux'))`);
@@ -144,6 +156,22 @@ try {
     assert.equal(await evaluate(`document.querySelector('#id_repuesto').value`), '');
     assert.equal(await evaluate(`document.querySelector('#search-id_repuesto').checkValidity()`), false);
     console.log('OK navegador: sugerencias, mínimo de 2 letras, ver más, teclado e invalidación de selecciones editadas');
+
+    await navigate('page=proveedores');
+    await wait(`document.querySelector('[data-supplier-catalog]')`);
+    await evaluate(`document.querySelector('[data-supplier-catalog]').click()`);
+    await wait(`document.querySelector('#supplier-catalog').open && document.querySelector('#supplier-catalog .supplier-part-form')`);
+    assert.equal(await evaluate(`document.querySelector('#supplier-catalog .operation-heading h2').textContent.trim().length>0`), true);
+    assert.equal(await evaluate(`document.querySelectorAll('#supplier-catalog tbody tr').length>0`), true);
+    await evaluate(`document.querySelector('#supplier-catalog [data-supplier-fetch]').click()`);
+    await wait(`document.querySelector('#supplier-catalog .supplier-part-form input[name=catalog_version]')?.value.length>0`);
+    assert.equal(await evaluate(`document.querySelector('#supplier-catalog .supplier-part-form input[name=confirmar_oferta]')!==null`), true);
+    assert.equal(await evaluate(`document.querySelector('#supplier-catalog .supplier-part-form input[name=catalog_version]').value.length>0`), true);
+    await screenshot('catalogo-proveedor');
+    await evaluate(`document.querySelector('#supplier-catalog [data-supplier-close]').click()`);
+    await wait(`!document.querySelector('#supplier-catalog').open`);
+    assert.equal(await evaluate(`document.activeElement.hasAttribute('data-supplier-catalog')`), true);
+    console.log('OK navegador: catálogo del proveedor se abre sobre el listado, muestra solo sus repuestos y conserva el foco');
 
     await navigate('page=ventas');
     await type('#search-id_cliente', 'Daniela');
@@ -179,6 +207,26 @@ try {
         assert.equal(await evaluate(`location.href`),previous);
     }
     console.log('OK navegador: ventanas de venta y compra conservan filtros, muestran comprobantes y cierran con Escape devolviendo el foco');
+
+    await navigate('page=ventas');
+    const exportLocation=await evaluate('location.href');
+    await evaluate(`document.querySelector('.export-links a').click()`);
+    await wait(`document.querySelector('#download-dialog .download-form') && !document.querySelector('#download-dialog [data-download-submit]').disabled`);
+    await type('#download-dialog input[name=cantidad]','25');
+    await type('#download-dialog input[name=desde_resultado]','5');
+    await wait(`!document.querySelector('#download-dialog [data-download-submit]').disabled && document.querySelector('.download-preview').textContent.includes('Se seleccionan 25')`);
+    assert.equal(await evaluate('location.href'),exportLocation);
+    await type('#download-dialog input[name=desde]','2026-10-29');
+    await type('#download-dialog input[name=hasta]','2026-10-01');
+    await wait(`document.querySelector('.download-preview').textContent.includes('fecha inicial')`);
+    assert.equal(await evaluate(`document.querySelector('#download-dialog [data-download-submit]').disabled`),true);
+    await type('#download-dialog input[name=desde]','2026-10-01');
+    await type('#download-dialog input[name=hasta]','2026-10-29');
+    await wait(`!document.querySelector('#download-dialog [data-download-submit]').disabled`);
+    await screenshot('filtros-descarga');
+    await evaluate(`document.querySelector('[data-download-close]').click()`);
+    await wait(`!document.querySelector('#download-dialog').open`);
+    console.log('OK navegador: filtros de descarga, vista previa por cantidad y rechazo de fechas invertidas sin perder el módulo');
 
     await send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
     await navigate('page=inicio');

@@ -102,6 +102,10 @@ try {
     if (!$seller) throw new RuntimeException('Se necesita un vendedor activo para las pruebas.');
 
     $purchase = signedPost(['action'=>'purchase','id_repuesto'=>$part,'cantidad'=>6,'id_proveedor'=>$supplier,'precio_unitario'=>'10.00']);
+    expectRejection($db,$purchase,'no tiene habilitado');
+    verifyDuplicate((int)snapshotDuplicate($db,$part)['stock_actual']===0,'proveedor sin catálogo no modifica inventario');
+    expectRejection($db,['action'=>'supplier_part','id_proveedor'=>$supplier,'catalog_part'=>$part,'estado'=>'ACTIVO','costo_referencia'=>'10.00','codigo_proveedor'=>''],'Confirme');
+    executePost($db,['action'=>'supplier_part','id_proveedor'=>$supplier,'catalog_part'=>$part,'estado'=>'ACTIVO','costo_referencia'=>'10.00','codigo_proveedor'=>'','confirmar_oferta'=>'1']);
     executePost($db, $purchase);
     $after = snapshotDuplicate($db, $part);
     verifyDuplicate((int)$after['stock_actual'] === 6 && (int)$after['compras'] === 1, 'compra inicial registrada una sola vez');
@@ -144,6 +148,10 @@ try {
         ['id_repuesto'=>$part,'cantidad'=>2,'precio_unitario'=>'9.00'],
         ['id_repuesto'=>$part,'cantidad'=>3,'precio_unitario'=>'10.00'],
         ['id_repuesto'=>$second,'cantidad'=>8,'precio_unitario'=>'5.00']])]);
+    $beforeCatalog=[snapshotDuplicate($db,$part),snapshotDuplicate($db,$second)];
+    expectRejection($db,$multiple,'no tiene habilitado');
+    verifyDuplicate([snapshotDuplicate($db,$part),snapshotDuplicate($db,$second)]===$beforeCatalog,'una relación inválida revierte toda la compra, no solo ese repuesto');
+    executePost($db,['action'=>'supplier_part','id_proveedor'=>$supplier,'catalog_part'=>$second,'estado'=>'ACTIVO','costo_referencia'=>'5.00','codigo_proveedor'=>'','confirmar_oferta'=>'1']);
     executePost($db,$multiple); $purchaseId=$GLOBALS['completedOperation']['id'];
     $doc=operationDocument($db,'compras',$purchaseId);
     verifyDuplicate(count($doc['lines'])===3 && $doc['consistent'] && (float)$doc['header']['total']===88.0,'una compra con tres partidas, dos repuestos y total correcto');
@@ -170,6 +178,25 @@ try {
     expectRejection($db,signedPost(array_replace($multiple,['lines'=>'{invalido}'])),'lista de repuestos');
     try {operationDocument($db,'ventas',2147483647);throw new RuntimeException('Se aceptó un comprobante inexistente.');}
     catch(OperationNotFound $e){verifyDuplicate(true,'comprobante inexistente rechazado');}
+
+    $version=rows($db,'SELECT CONVERT(bigint,version) version FROM RP19_PROVEEDOR_REPUESTO WHERE id_proveedor=? AND id_repuesto=?',[$supplier,$second])[0]['version'];
+    $editCatalog=['action'=>'supplier_part','id_proveedor'=>$supplier,'catalog_part'=>$second,'estado'=>'INACTIVO','costo_referencia'=>'7.50','codigo_proveedor'=>'REF-B','catalog_version'=>$version];
+    executePost($db,$editCatalog);
+    expectRejection($db,$editCatalog,'fue modificada');
+    expectRejection($db,signedPost(['action'=>'purchase','id_proveedor'=>$supplier,'id_repuesto'=>$second,'cantidad'=>1,'precio_unitario'=>'5.00']),'no tiene habilitado');
+    verifyDuplicate(operationDocument($db,'compras',$purchaseId)['consistent'],'deshabilitar una relación y cambiar su costo no modifica compras anteriores');
+    $beforeCatalog=snapshotDuplicate($db,$second);
+    $db->beginTransaction();
+    try {
+        $header=rows($db,"INSERT RP09_COMPRAS(id_proveedor,total,estado) OUTPUT INSERTED.id_compra VALUES(?,5,'RECIBIDO')",[$supplier])[0]['id_compra'];
+        run($db,'INSERT RP10_DETALLE_COMPRAS(id_compra,id_repuesto,cantidad,precio_unitario,subtotal) VALUES(?,?,1,5,5)',[$header,$second]);
+        throw new RuntimeException('SQL directo permitió un producto deshabilitado.');
+    } catch(PDOException $e) {
+        verifyDuplicate((int)($e->errorInfo[1]??0)===50016,'la base también bloquea compras fuera del catálogo mediante SQL directo');
+    } finally {if($db->inTransaction())$db->rollBack();}
+    verifyDuplicate(snapshotDuplicate($db,$second)===$beforeCatalog,'rechazo desde SQL revierte stock e historial');
+    $editCatalog['catalog_version']=rows($db,'SELECT CONVERT(bigint,version) version FROM RP19_PROVEEDOR_REPUESTO WHERE id_proveedor=? AND id_repuesto=?',[$supplier,$second])[0]['version'];
+    executePost($db,array_replace($editCatalog,['estado'=>'ACTIVO','confirmar_oferta'=>'1']));
 
     if(in_array('--http',$argv,true)) {
         // Flujo real con cookie de sesión, CSRF y respuesta parcial de la aplicación.
@@ -210,6 +237,7 @@ try {
             run($db, 'DELETE FROM RP07_VENTAS WHERE id_cliente=?', [$client]);
         }
         if ($supplier) {
+            run($db,'DELETE FROM RP19_PROVEEDOR_REPUESTO WHERE id_proveedor=?',[$supplier]);
             run($db, 'DELETE FROM RP10_DETALLE_COMPRAS WHERE id_compra IN (SELECT id_compra FROM RP09_COMPRAS WHERE id_proveedor=?)', [$supplier]);
             run($db, 'DELETE FROM RP09_COMPRAS WHERE id_proveedor=?', [$supplier]);
         }

@@ -77,6 +77,7 @@ function databaseErrorMessage(Throwable $error, string $action): string
         50013 => 'Un repuesto ya no existe o está inactivo. Retírelo de la lista.',
         50014 => 'Un precio cambió. Revise los precios actualizados y confirme nuevamente.',
         50015 => 'El total supera el máximo permitido de 99,999,999.99.',
+        50016 => 'El proveedor no tiene habilitado uno de los repuestos. Revise su catálogo.',
         default => in_array($action, ['sale', 'purchase'], true)
             ? 'No se pudo completar la operación. Verifique la conexión e intente nuevamente; no se guardaron cambios parciales en la compra o venta.'
             : 'No se pudo guardar el registro. Verifique los datos y la conexión e intente nuevamente.',

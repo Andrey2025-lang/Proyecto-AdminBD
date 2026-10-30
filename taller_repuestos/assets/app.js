@@ -1,6 +1,7 @@
 (() => {
     document.documentElement.classList.add('js');
-    const format = new Intl.NumberFormat('es', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const amounts = new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const format = {format:value=>'₡ '+amounts.format(value)};
     const widgets = new WeakMap();
     const mobile = window.matchMedia('(max-width: 680px)');
     const sidebar = document.querySelector('#sidebar');
@@ -9,19 +10,26 @@
     const backdrop = document.querySelector('.sidebar-backdrop');
     let pinned=false;
     try {pinned=localStorage.getItem('repuesto.sidebar.pinned')==='true';} catch (_) {}
-    let hoverTimer;
-    function expandSidebar() { if (!mobile.matches) { clearTimeout(hoverTimer); document.body.classList.add('sidebar-peek'); syncSidebar(); } }
+    let hoverTimer,openTimer;
+    function expandSidebar(event) {
+        if(mobile.matches)return;
+        clearTimeout(hoverTimer);clearTimeout(openTimer);
+        const open=()=>{document.body.classList.add('sidebar-peek');syncSidebar();};
+        if(event?.type==='focusin'||pinned||document.body.classList.contains('sidebar-peek'))open();
+        else openTimer=setTimeout(open,150);
+    }
     function leaveSidebar(event) {
         if (sidebar?.contains(event.relatedTarget) || toggle?.contains(event.relatedTarget)) return;
-        clearTimeout(hoverTimer);
-        hoverTimer=setTimeout(()=>{document.body.classList.remove('sidebar-peek');syncSidebar();},160);
+        clearTimeout(openTimer);clearTimeout(hoverTimer);
+        hoverTimer=setTimeout(()=>{
+            if(sidebar?.matches(':hover')||sidebar?.querySelector(':focus-visible'))return;
+            document.body.classList.remove('sidebar-peek');syncSidebar();
+        },150);
     }
-    [sidebar,toggle].forEach(element=>{
-        element?.addEventListener('pointerenter',expandSidebar);
-        element?.addEventListener('pointerleave',leaveSidebar);
-        element?.addEventListener('focusin',expandSidebar);
-        element?.addEventListener('focusout',leaveSidebar);
-    });
+    sidebar?.addEventListener('pointerenter',expandSidebar);
+    sidebar?.addEventListener('pointerleave',leaveSidebar);
+    sidebar?.addEventListener('focusin',expandSidebar);
+    sidebar?.addEventListener('focusout',leaveSidebar);
     function syncSidebar() {
         const open = document.body.classList.contains('sidebar-open');
         const expanded=pinned||document.body.classList.contains('sidebar-peek');
@@ -43,13 +51,18 @@
         mobileToggle?.setAttribute('aria-expanded',String(mobile.matches&&open));
         mobileToggle?.setAttribute('aria-label',open?'Cerrar menú':'Abrir menú');
     }
-    function closeSidebar() { document.body.classList.remove('sidebar-open','sidebar-peek'); syncSidebar(); }
+    function closeSidebar() {
+        clearTimeout(openTimer);clearTimeout(hoverTimer);
+        document.body.classList.remove('sidebar-open');
+        document.body.classList.toggle('sidebar-peek',!mobile.matches&&!!sidebar?.matches(':hover'));
+        syncSidebar();
+    }
     toggle?.addEventListener('click', () => {
         if (mobile.matches) document.body.classList.toggle('sidebar-open');
         else {
             pinned=!pinned;
             try {localStorage.setItem('repuesto.sidebar.pinned',String(pinned));} catch (_) {}
-            if(!pinned)document.body.classList.remove('sidebar-peek');
+            if(!pinned)document.body.classList.toggle('sidebar-peek',!!sidebar?.matches(':hover'));
         }
         syncSidebar();
         if (mobile.matches && document.body.classList.contains('sidebar-open')) sidebar.querySelector('a')?.focus();
@@ -63,6 +76,7 @@
     sidebar?.addEventListener('click', event => { if (event.target.closest('a') && mobile.matches) closeSidebar(); });
     mobile.addEventListener('change', closeSidebar);
     syncSidebar();
+    requestAnimationFrame(()=>requestAnimationFrame(()=>document.body.classList.add('sidebar-ready')));
 
     function refreshEstimate(changed) {
         const part = document.querySelector('#id_repuesto');
@@ -70,11 +84,11 @@
         const quantity = document.querySelector('#cantidad');
         const priceInput = document.querySelector('#precio_unitario');
         const sale = part.dataset.operation === 'sale';
-        if (!sale && changed === part && priceInput) priceInput.value = part.value ? part.dataset.price : '0.00';
+        if (!sale && changed === part && priceInput) priceInput.value = part.value ? (part.dataset.price||'') : '0.00';
         const price = sale ? Number(part.dataset.price || 0) : Number(priceInput?.value || 0);
         if (!document.querySelector('.cart-editor')) document.querySelector('#total-preview').textContent = format.format(price * Number(quantity.value || 0));
         document.querySelector('#stock-hint').textContent = part.value
-            ? `Existencias: ${part.dataset.stock} unidades.${sale ? ` Precio unitario: ${format.format(price)}` : ''}`
+            ? `Existencias: ${part.dataset.stock} unidades.${sale ? ` Precio unitario: ${format.format(price)}` : (part.dataset.price?` Costo de referencia del proveedor: ${format.format(price)}. Confirme el costo real.`:' Sin costo de referencia: indique el costo real de compra.')}`
             : 'Seleccione una referencia para consultar sus existencias.';
         if (sale) {
             quantity.max = part.value ? part.dataset.stock : '2147483647';
@@ -110,10 +124,12 @@
         }
         function open() { state.open = true; menu.hidden = false; input.setAttribute('aria-expanded', 'true'); positionMenu(); }
         function clearSelection() {
+            const previous=hidden.value;
             hidden.value = ''; hidden.dataset.price = ''; hidden.dataset.stock = ''; hidden.dataset.label = ''; hidden.dataset.code = '';
             input.removeAttribute('aria-activedescendant'); state.active = -1;
             clear.hidden = true; input.setCustomValidity(input.required||input.value.trim()?'Busque y seleccione una opción de la lista.':'');
             if (hidden.id === 'id_repuesto') refreshEstimate(hidden);
+            if(previous)hidden.dispatchEvent(new Event('change',{bubbles:true}));
         }
         state.reset=()=>{ state.controller?.abort(); clearTimeout(state.timer); state.sequence++; input.value=''; clearSelection(); close(); };
         widget.addEventListener('reset-selection',()=>state.reset());
@@ -131,11 +147,12 @@
             hidden.value = String(item.id); input.value = item.label;
             hidden.dataset.label=item.label; hidden.dataset.code=item.codigo_barras||'';
             if (hidden.id === 'id_repuesto') {
-                hidden.dataset.price = item[widget.dataset.operation === 'sale' ? 'precio_venta' : 'precio_compra'];
+                hidden.dataset.price = item[widget.dataset.operation === 'sale' ? 'precio_venta' : 'precio_compra']??'';
                 hidden.dataset.stock = String(item.stock_actual);
                 refreshEstimate(hidden);
             }
             input.setCustomValidity(''); clear.hidden = false; input.focus({ preventScroll: true }); close();
+            hidden.dispatchEvent(new Event('change',{bubbles:true}));
         }
         function render() {
             list.replaceChildren(); state.active = -1;
@@ -145,8 +162,9 @@
                 option.id = `${list.id}-${index}`; option.setAttribute('role', 'option'); option.setAttribute('aria-selected', 'false');
                 const label = document.createElement('strong'); label.textContent = item.label; option.append(label);
                 const detail = document.createElement('small');
+                const cost=item[widget.dataset.operation==='sale'?'precio_venta':'precio_compra'];
                 detail.textContent = widget.dataset.lookup.startsWith('repuestos')
-                    ? `${item.codigo_barras} · ${item.stock_actual} unidades · ${format.format(Number(item[widget.dataset.operation === 'sale' ? 'precio_venta' : 'precio_compra']))}`
+                    ? `${item.codigo_barras} · ${item.stock_actual} unidades · ${cost===null||cost===undefined?'Costo por indicar':format.format(Number(cost))}`
                     : (item.cedula ? `Identificación: ${item.cedula}` : 'Proveedor');
                 option.append(detail);
                 option.addEventListener('pointerdown', event => event.preventDefault());
@@ -159,6 +177,11 @@
             const term = hidden.value ? '' : [...input.value.trim()].slice(0, 100).join('');
             state.controller?.abort();
             const sequence = ++state.sequence;
+            const supplier=widget.dataset.lookup==='repuestos_compra'?widget.closest('form').querySelector('#id_proveedor')?.value:null;
+            if(widget.dataset.lookup==='repuestos_compra'&&!supplier) {
+                list.replaceChildren();state.items=[];state.page=0;more.hidden=true;state.loading=false;
+                status.textContent='Seleccione primero el proveedor. Después verá sus repuestos habilitados.';return;
+            }
             if (term !== '' && [...term].length < 2) {
                 list.replaceChildren(); more.hidden = true; state.items = []; state.page = 0;
                 state.loading = false; status.textContent = 'Escriba al menos 2 caracteres para buscar.'; return;
@@ -169,6 +192,7 @@
             const controller = new AbortController(); state.controller = controller;
             const url = new URL('index.php', location.href);
             url.search = new URLSearchParams({ lookup: widget.dataset.lookup, operation: widget.dataset.operation, term, lp: String(state.page + 1) });
+            if(supplier)url.searchParams.set('proveedor',supplier);
             try {
                 const response = await fetch(url, { signal: controller.signal, headers: { Accept: 'application/json' } });
                 const data = await response.json();

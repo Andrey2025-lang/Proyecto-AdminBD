@@ -9,8 +9,8 @@ function e($value): string
 {
     return htmlspecialchars((string)($value ?? ''), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
 }
-function money($value): string { return number_format((float)$value, 2, '.', ','); }
-function dateLabel($value): string { return date('d/m/Y H:i', strtotime((string)$value)); }
+function money($value): string { return '₡ '.number_format((float)$value, 2, '.', ','); }
+function dateLabel($value): string { return $value===null||$value===''?'—':date('d/m/Y H:i', strtotime((string)$value)); }
 function csrf(): void { echo '<input type="hidden" name="csrf" value="' . e($_SESSION['csrf']) . '">'; }
 function startForm(string $page, string $action): void
 {
@@ -50,7 +50,7 @@ function emptyRow(int $cols, string $label = 'Todavía no hay registros. Comienc
 function editLink(string $page, int $id): string
 {
     $url=e(pageUrl($page,['edit'=>$id]));
-    return '<a class="button is-small is-light" href="'.$url.'" data-edit-record>Editar</a>';
+    return '<a class="button is-small is-light" href="'.$url.'" data-edit-record>Editar</a>'.($page==='proveedores'?' <button type="button" class="button is-small is-light" data-supplier-catalog="'.$id.'">Repuestos</button>':'');
 }
 function pageUrl(string $page, array $changes=[]): string
 {
@@ -121,7 +121,17 @@ function pagination(string $page, array $data): void
 function exportLinks(string $page, string $kind): void
 {
     $url=pageUrl($page,['export'=>$kind,'p'=>null,'h'=>null]);
-    echo '<div class="export-links"><a class="button is-small is-light" href="'.e($url.'&format=xlsx').'">Descargar Excel</a><a class="button is-small is-light" href="'.e($url.'&format=print').'" target="_blank" rel="noopener">Imprimir / PDF</a><small>Se exportan todos los resultados del filtro.</small></div>';
+    $trade=in_array($kind,['ventas','compras'],true);
+    echo '<div class="export-links"><a class="button is-small is-light" href="'.e($url.'&format=xlsx').'">'.($kind==='repuestos'?'Catálogo interno (Excel)':'Descargar Excel').'</a><a class="button is-small is-light" href="'.e($url.'&format=print').'" target="_blank" rel="noopener">'.($trade?'Resumen / PDF':'Imprimir / PDF').'</a><small>'.($trade?'Excel incluye todas las operaciones y sus repuestos. PDF muestra el resumen.':'Se exportan todos los resultados del filtro.').'</small></div>';
+    $options=[[$kind,'csv',$trade?'Detalle de repuestos (CSV)':'Datos para importar (CSV)']];
+    if($kind==='inventario')array_push($options,['reposicion','xlsx','Repuestos por revisar para compra (Excel)'],['reposicion','print','Repuestos por revisar para compra (PDF)']);
+    if($kind==='repuestos')array_push($options,['precios','xlsx','Lista de precios sin costos internos (Excel)'],['precios','print','Lista de precios sin costos internos (PDF)']);
+    echo '<details class="download-options"><summary>Más descargas</summary><div>';
+    foreach($options as [$export,$format,$label]) {
+        $href=pageUrl($page,['export'=>$export,'format'=>$format,'p'=>null,'h'=>null]);
+        echo '<a class="button is-small is-light" href="'.e($href).'"'.($format==='print'?' target="_blank" rel="noopener"':'').'>'.e($label).'</a>';
+    }
+    echo '</div></details>';
 }
 function selectedPostId(string $action, string $field): int
 {
@@ -132,7 +142,7 @@ function lookupField(string $label, string $name, string $kind, array $items, st
     $match=null;
     foreach($items as $item) if((int)$item['id']===$selected) $match=$item;
     if (!$match) $selected=0;
-    $extra=$kind==='repuestos'?' data-operation="'.$operation.'" data-price="'.e($match[$operation==='sale'?'precio_venta':'precio_compra']??'').'" data-stock="'.e($match['stock_actual']??'').'"':'';
+    $extra=in_array($kind,['repuestos','repuestos_compra'],true)?' data-operation="'.$operation.'" data-price="'.e($match[$operation==='sale'?'precio_venta':'precio_compra']??'').'" data-stock="'.e($match['stock_actual']??'').'"':'';
     echo '<div class="field autocomplete" data-lookup="'.$kind.'" data-operation="'.$operation.'"><label class="label" for="search-'.$name.'">'.e($label).'</label><div class="autocomplete-control"><input class="input autocomplete-input" id="search-'.$name.'" type="text" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="choices-'.$name.'" autocomplete="off" spellcheck="false" placeholder="Escriba para buscar…" '.($required?'required':'').' value="'.e($match['label']??'').'"><button class="autocomplete-clear" type="button" aria-label="Limpiar '.e($label).'" '.(!$selected?'hidden':'').'>×</button></div><input type="hidden" id="'.$name.'" name="'.$name.'" value="'.($selected?:'').'"'.$extra.'><div class="autocomplete-menu" hidden><p class="autocomplete-status" role="status" aria-live="polite"></p><div class="autocomplete-options" id="choices-'.$name.'" role="listbox" aria-label="Resultados de '.e($label).'"></div><button class="autocomplete-more" type="button" hidden>Mostrar más resultados</button></div><p class="help">Abra la lista o escriba al menos 2 caracteres para filtrar.</p><noscript><p class="help">Active JavaScript para buscar y seleccionar un registro.</p></noscript></div>';
 }
 function cartSeed(PDO $db, string $operation): array
@@ -142,10 +152,13 @@ function cartSeed(PDO $db, string $operation): array
     $ids=array_unique(array_column($lines,'id_repuesto'));
     $parts=rows($db,'SELECT id_repuesto,nombre,codigo_barras,stock_actual,precio_venta,estado FROM RP03_REPUESTOS WHERE id_repuesto IN ('.implode(',',array_fill(0,count($ids),'?')).')',array_values($ids));
     $map=[]; foreach($parts as $part) $map[(int)$part['id_repuesto']]=$part;
-    return array_map(static function($line) use($map,$operation) {
+    $supplier=$operation==='purchase'?selectedPostId('purchase','id_proveedor'):0;
+    $allowed=$supplier?array_map('intval',array_column(rows($db,"SELECT id_repuesto FROM dbo.RP19_PROVEEDOR_REPUESTO WHERE id_proveedor=? AND estado='ACTIVO'",[$supplier]),'id_repuesto')):[];
+    return array_map(static function($line) use($map,$operation,$supplier,$allowed) {
         $p=$map[$line['id_repuesto']]??null;
         return ['id_repuesto'=>$line['id_repuesto'],'cantidad'=>$line['cantidad'],'precio'=>$operation==='sale'?($p['precio_venta']??'0.00'):$line['precio_unitario'],
-            'nombre'=>$p['nombre']??'Repuesto no disponible','codigo_barras'=>$p['codigo_barras']??'', 'stock'=>$p && $p['estado']==='ACTIVO'?(int)$p['stock_actual']:0];
+            'nombre'=>$p['nombre']??'Repuesto no disponible','codigo_barras'=>$p['codigo_barras']??'', 'stock'=>$p && $p['estado']==='ACTIVO'?(int)$p['stock_actual']:0,
+            'supplier'=>$supplier,'supplierValid'=>$operation==='sale'||($p&&$p['estado']==='ACTIVO'&&in_array($line['id_repuesto'],$allowed,true))];
     },$lines);
 }
 function panelTitle(string $title, string $subtitle = ''): void
@@ -250,7 +263,7 @@ function contactsPage(PDO $db, string $page): void
     input('Teléfono', 'telefono', phoneLabel($item['telefono'] ?? ''), 'tel', 'required maxlength="20" placeholder="8888-8888"');
     input('Correo electrónico' . ($client ? ' (opcional)' : ''), 'email', $item['email'] ?? '', 'email', 'maxlength="100" ' . ($client ? '' : 'required')); ?>
     <button class="button is-primary is-fullwidth">Guardar <?= $client ? 'cliente' : 'proveedor' ?></button>
-    <?php if ($item): ?><a class="button is-text is-fullwidth mt-2" href="index.php?page=<?= $page ?>" hx-get="index.php?page=<?= $page ?>" hx-target="#content" hx-push-url="true">Cancelar edición</a><?php endif ?></form></section></div>
+    <?php if ($item): ?><a class="button is-text is-fullwidth mt-2" href="index.php?page=<?= $page ?>" hx-get="index.php?page=<?= $page ?>" hx-target="#content" hx-push-url="true">Cancelar edición</a><?php endif ?></form><?php if(!$client&&$item): ?><button type="button" class="button is-light is-fullwidth mt-4" data-supplier-catalog="<?= (int)$item[$pk] ?>">Repuestos que ofrece</button><?php endif ?></section></div>
     <?php
 }
 
@@ -259,7 +272,7 @@ function operationsPage(PDO $db, string $page): void
     $sale = $page === 'ventas';
     $operation=$sale?'sale':'purchase';
     $selectedPart=selectedPostId($operation,'id_repuesto'); $selectedPerson=selectedPostId($operation,$sale?'id_cliente':'id_proveedor');
-    $parts=lookupItems($db,'repuestos','',$selectedPart);
+    $parts=lookupItems($db,$sale?'repuestos':'repuestos_compra','',$selectedPart,$sale?0:$selectedPerson);
     $people=lookupItems($db,$sale?'clientes':'proveedores','',$selectedPerson);
     $sellers = $sale ? rows($db, "SELECT usuario_id,nombre_usuario FROM RP13_USUARIOS WHERE estado='ACTIVO' AND nombre_usuario <> 'sistema' ORDER BY nombre_usuario") : [];
     ?>
@@ -271,20 +284,22 @@ function operationsPage(PDO $db, string $page): void
     <?php if (!$items) emptyRow(5); foreach ($items as $r): ?><tr><td><strong>#<?= (int)$r['id'] ?></strong><small class="cell-subtitle"><?= dateLabel($r['fecha']) ?></small></td><td><?= e($r['persona']) ?><?php if ($sale): ?><small class="cell-subtitle"><?= e($r['vendedor']) ?></small><?php endif ?></td><td class="amount"><?= money($r['total']) ?></td><td><span class="tag is-success is-light"><?= e($r['estado']) ?></span></td><td><button class="button is-small is-light" type="button" data-detail-kind="<?= $page ?>" data-detail-id="<?= (int)$r['id'] ?>">Ver detalle</button></td></tr><?php endforeach ?>
     </tbody></table></div>
     <?php pagination($page,$data); ?></section>
-    <section class="panel-card form-panel"><?php panelTitle($sale ? 'Nueva venta' : 'Registrar compra', 'Todos los importes están en la moneda del negocio.');
-    if (!$people || !$parts || ($sale && !$sellers)): ?><div class="notification is-warning is-light">Para continuar necesita <?= $sale ? 'un cliente, un repuesto y un vendedor activo' : 'un proveedor y un repuesto' ?>. Complete los registros que faltan.</div><?php endif;
+    <section class="panel-card form-panel"><?php panelTitle($sale ? 'Nueva venta' : 'Registrar compra', 'Todos los montos están en colones costarricenses (CRC).');
+    if (!$people || !$parts || ($sale && !$sellers)): ?><div class="notification is-warning is-light">Para continuar necesita <?= $sale ? 'un cliente, un repuesto y un vendedor activo' : 'un proveedor con repuestos habilitados' ?>. Complete los registros que faltan.</div><?php endif;
     startForm($page, $sale ? 'sale' : 'purchase');
     lookupField($sale?'Cliente':'Proveedor',$sale?'id_cliente':'id_proveedor',$sale?'clientes':'proveedores',$people,$operation,$selectedPerson);
     if ($sale) options('Vendedor responsable', 'id_vendedor', $sellers, 'usuario_id', 'nombre_usuario'); ?>
     <div class="cart-editor" data-operation="<?= $operation ?>"><script type="application/json" class="cart-seed"><?= json_encode(cartSeed($db,$operation),JSON_HEX_TAG|JSON_HEX_AMP|JSON_HEX_APOS|JSON_HEX_QUOT|JSON_THROW_ON_ERROR) ?></script><input type="hidden" name="lines" class="cart-lines" value="[]">
     <h3 class="cart-heading">Agregar repuestos</h3>
-    <?php lookupField('Repuesto','id_repuesto','repuestos',$parts,$operation,0,false); ?>
+    <?php lookupField('Repuesto','id_repuesto',$sale?'repuestos':'repuestos_compra',$parts,$operation,0,false); ?>
+    <?php if(!$sale): ?><p class="help mb-4">Primero seleccione un proveedor. Solo se muestran sus repuestos habilitados. Puede administrar su oferta desde Proveedores → Editar → Repuestos que ofrece.</p><?php endif ?>
     <div id="stock-hint" class="help mb-4">Seleccione una referencia para consultar sus existencias.</div>
     <?php input('Cantidad', 'cantidad', 1, 'number', 'min="1" max="2147483647" step="1"');
     if (!$sale) input('Precio unitario de compra', 'precio_unitario', '0.00', 'number', 'min="0" max="99999999.99" step="0.01"'); ?>
     <button type="button" class="button is-light is-fullwidth" data-cart-add>+ Agregar a la operación</button>
     <div class="cart-alert notification is-warning is-light" role="alert" hidden></div><div class="cart-table-wrap"><table class="table is-fullwidth cart-table"><thead><tr><th>Repuesto</th><th>Cant.</th><th>Precio</th><th></th></tr></thead><tbody class="cart-items"></tbody></table></div>
-    <div class="total-preview"><span>Total estimado</span><strong id="total-preview">0.00</strong><small>Revise la cantidad y el precio antes de confirmar.</small></div>
+    <?php if(!$sale): ?><button type="button" class="button is-small is-light" data-cart-clear>Vaciar repuestos</button><?php endif ?>
+    <div class="total-preview"><span>Total estimado</span><strong id="total-preview">₡ 0.00</strong><small>Revise la cantidad y el precio antes de confirmar.</small></div>
     <button class="button is-primary is-fullwidth" data-cart-submit <?= !$people || !$parts || ($sale && !$sellers) ? 'disabled' : '' ?>><?= $sale ? 'Confirmar venta' : 'Confirmar recepción' ?></button></div>
     <p class="help mt-3">Una vez confirmada, la operación no se puede editar ni anular.</p></form></section></div>
     <?php
