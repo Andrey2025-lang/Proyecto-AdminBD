@@ -39,7 +39,7 @@ Todos los módulos consultan SQL Server. La antigua vista con datos incrustados 
 
 ## Reportes y navegación
 
-La migración **010** incorpora IVA incluido para ventas nuevas: los precios finales no aumentan; el procedimiento guarda base e impuesto y los muestra en el detalle y comprobantes. En compras se requiere confirmar el IVA del proveedor. La historia sin desglose se conserva, sin asignarle impuestos supuestos. Ver alcance fiscal y limitaciones en la guía de la aplicación.
+La migración **010** incorpora IVA incluido: los precios finales no aumentan; se guarda base e impuesto y se muestran en el detalle y comprobantes. Las compras nuevas requieren una tarifa activa y sus precios siempre incluyen ese IVA, sin sumarlo nuevamente. La historia sin desglose se conserva, sin asignarle impuestos supuestos. En Compras también se puede buscar primero un repuesto y elegir entre los proveedores que lo tienen habilitado. Ver alcance fiscal y limitaciones en la guía de la aplicación.
 
 En **Reportes** se puede descargar Excel real (`.xlsx`), CSV o abrir un documento imprimible para guardar como PDF con el navegador. Hay filtros por fecha y búsqueda; cada listado también permite exportar sus filtros actuales. No se exporta únicamente la página visible.
 

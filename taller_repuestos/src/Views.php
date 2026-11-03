@@ -291,23 +291,32 @@ function operationsPage(PDO $db, string $page): void
     </tbody></table></div>
     <?php pagination($page,$data); ?></section>
     <section class="panel-card form-panel"><?php panelTitle($sale ? 'Nueva venta' : 'Registrar compra', 'Todos los montos están en colones costarricenses (CRC).');
-    if (!$people || !$parts || ($sale && !$sellers)): ?><div class="notification is-warning is-light">Para continuar necesita <?= $sale ? 'un cliente, un repuesto y un vendedor activo' : 'un proveedor con repuestos habilitados' ?>. Complete los registros que faltan.</div><?php endif;
+    if (!$people || ($sale && (!$parts || !$sellers))): ?><div class="notification is-warning is-light">Para continuar necesita <?= $sale ? 'un cliente, un repuesto y un vendedor activo' : 'un proveedor con repuestos habilitados' ?>. Complete los registros que faltan.</div><?php endif;
     startForm($page, $sale ? 'sale' : 'purchase');
-    lookupField($sale?'Cliente':'Proveedor',$sale?'id_cliente':'id_proveedor',$sale?'clientes':'proveedores',$people,$operation,$selectedPerson);
-    if ($sale) options('Vendedor responsable', 'id_vendedor', $sellers, 'usuario_id', 'nombre_usuario');
+    if ($sale) lookupField('Cliente','id_cliente','clientes',$people,$operation,$selectedPerson);
     else {
-        $choices=[0=>'Sin desglose de IVA confirmado'];
-        foreach($taxRates as $rate)$choices[$rate['id_tarifa']]=$rate['nombre'].' incluido ('.number_format((float)$rate['porcentaje'],2).'%)';
-        filterSelect('tarifa_compra','IVA según el comprobante del proveedor',$choices,selectedPostId('purchase','tarifa_compra'));
-        echo '<label class="checkbox mt-3 mb-3"><input type="checkbox" name="confirmar_iva" value="1" '.(($_POST['confirmar_iva']??'')==='1'?'checked':'').'> Confirmo que todos los precios ingresados incluyen el IVA de la tarifa seleccionada, según el comprobante del proveedor.</label><p class="help mb-4">Si no está confirmado o el comprobante tiene tarifas distintas, deje la opción sin desglose. Esto no significa que la compra esté exenta.</p>';
-    } ?>
-    <div class="cart-editor" data-operation="<?= $operation ?>" data-tax-rate="<?= e($saleTax??'') ?>"><script type="application/json" class="tax-rates"><?= json_encode($taxRates,JSON_HEX_TAG|JSON_HEX_AMP|JSON_HEX_APOS|JSON_HEX_QUOT|JSON_THROW_ON_ERROR) ?></script><script type="application/json" class="cart-seed"><?= json_encode(cartSeed($db,$operation),JSON_HEX_TAG|JSON_HEX_AMP|JSON_HEX_APOS|JSON_HEX_QUOT|JSON_THROW_ON_ERROR) ?></script><input type="hidden" name="lines" class="cart-lines" value="[]">
+        $supplierLabel='';foreach($people as $person)if((int)$person['id']===$selectedPerson)$supplierLabel=$person['label'];
+        echo '<div data-supplier-picker'.($selectedPerson?' hidden':'').'><p class="help mb-2">Puede empezar por un proveedor o buscar el repuesto abajo para ver quién lo ofrece.</p>';
+        lookupField('Buscar proveedor (opcional)','id_proveedor','proveedores',$people,$operation,$selectedPerson,false);
+        echo '</div>';
+    }
+    if ($sale) options('Vendedor responsable', 'id_vendedor', $sellers, 'usuario_id', 'nombre_usuario');
+    ?>
+    <div class="cart-editor" <?= $sale?'':'data-purchase-discovery' ?> data-operation="<?= $operation ?>" data-tax-rate="<?= e($saleTax??'') ?>"><script type="application/json" class="tax-rates"><?= json_encode($taxRates,JSON_HEX_TAG|JSON_HEX_AMP|JSON_HEX_APOS|JSON_HEX_QUOT|JSON_THROW_ON_ERROR) ?></script><script type="application/json" class="cart-seed"><?= json_encode(cartSeed($db,$operation),JSON_HEX_TAG|JSON_HEX_AMP|JSON_HEX_APOS|JSON_HEX_QUOT|JSON_THROW_ON_ERROR) ?></script><input type="hidden" name="lines" class="cart-lines" value="[]">
     <h3 class="cart-heading">Agregar repuestos</h3>
     <?php lookupField('Repuesto','id_repuesto',$sale?'repuestos':'repuestos_compra',$parts,$operation,0,false); ?>
-    <?php if(!$sale): ?><p class="help mb-4">Primero seleccione un proveedor. Solo se muestran sus repuestos habilitados. Puede administrar su oferta desde Proveedores → Editar → Repuestos que ofrece.</p><?php endif ?>
+    <?php if(!$sale): ?><p class="help mb-4">Busque el repuesto y elija quién lo ofrece. Los siguientes repuestos se buscarán en el catálogo del mismo proveedor. El catálogo no garantiza disponibilidad actual.</p><div data-part-suppliers aria-live="polite" class="mb-3"></div><div class="notification is-light mb-3" data-selected-supplier <?= $selectedPerson?'':'hidden' ?>><strong>Proveedor: </strong><span data-supplier-name><?= e($supplierLabel) ?></span><button type="button" class="button is-small is-light ml-2" data-change-supplier>Cambiar proveedor</button><p class="help">Una compra corresponde a un proveedor. Para cambiarlo, vacíe primero los repuestos agregados.</p></div><?php endif ?>
     <div id="stock-hint" class="help mb-4">Seleccione una referencia para consultar sus existencias.</div>
     <?php input('Cantidad', 'cantidad', 1, 'number', 'min="1" max="2147483647" step="1"');
-    if (!$sale) input('Precio unitario de compra', 'precio_unitario', '0.00', 'number', 'min="0" max="99999999.99" step="0.01"'); ?>
+    if (!$sale) {
+        input('Precio unitario de compra (IVA incluido)', 'precio_unitario', '0.00', 'number', 'min="0" max="99999999.99" step="0.01"');
+        $choices=[];
+        foreach($taxRates as $rate)$choices[$rate['id_tarifa']]=$rate['nombre'].' incluido ('.number_format((float)$rate['porcentaje'],2).'%)';
+        $defaultTax=rows($db,'SELECT tarifa_venta FROM dbo.RP21_CONFIG_FISCAL WHERE id=1')[0]['tarifa_venta']??0;
+        if (!$choices || !isset($choices[$defaultTax])) throw new InvalidArgumentException('No hay una tarifa de IVA configurada y activa. Contacte al administrador.');
+        filterSelect('tarifa_compra','IVA incluido en el precio de compra',$choices,selectedPostId('purchase','tarifa_compra') ?: $defaultTax);
+        echo '<p class="help mb-4">Todos los precios de compra incluyen el IVA seleccionado. No se agrega al total nuevamente. Use la tarifa indicada en el comprobante; este formulario admite una tarifa por compra.</p>';
+    } ?>
     <button type="button" class="button is-light is-fullwidth" data-cart-add>+ Agregar a la operación</button>
     <div class="cart-alert notification is-warning is-light" role="alert" hidden></div><div class="cart-table-wrap"><table class="table is-fullwidth cart-table"><thead><tr><th>Repuesto</th><th>Cant.</th><th>Precio</th><th></th></tr></thead><tbody class="cart-items"></tbody></table></div>
     <?php if(!$sale): ?><button type="button" class="button is-small is-light" data-cart-clear>Vaciar repuestos</button><?php endif ?>

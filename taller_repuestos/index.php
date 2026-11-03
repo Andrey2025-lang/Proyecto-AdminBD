@@ -28,6 +28,25 @@ try {
     $setup = 'No se pudo acceder a la información del taller. Revise la configuración de conexión o contacte al administrador.';
     http_response_code(503);
 }
+if (isset($_GET['part_suppliers'])) {
+    session_write_close();
+    header('Content-Type: application/json; charset=UTF-8');
+    try {
+        if (!$db) throw new RuntimeException('Conexión no disponible.');
+        $part=queryInteger('part_suppliers',0);$supplierPage=queryInteger('sp',1);
+        if ($part<1 || $supplierPage<1 || $supplierPage>5000) throw new InvalidArgumentException('Búsqueda inválida.');
+        $filterSupplier=queryInteger('supplier',0);
+        $supplierWhere=$filterSupplier?' AND P.id_proveedor=?':'';
+        $supplierParams=[$part];if($filterSupplier)$supplierParams[]=$filterSupplier;
+        $suppliers=queryStatement($db,"SELECT P.id_proveedor id,P.nombre_empresa label,C.costo_referencia,C.codigo_proveedor,R.id_repuesto,R.nombre,R.codigo_barras,R.stock_actual FROM dbo.RP19_PROVEEDOR_REPUESTO C JOIN dbo.RP02_PROVEEDORES P ON P.id_proveedor=C.id_proveedor JOIN dbo.RP03_REPUESTOS R ON R.id_repuesto=C.id_repuesto WHERE C.id_repuesto=? AND C.estado='ACTIVO' AND R.estado='ACTIVO'".$supplierWhere." ORDER BY P.nombre_empresa,P.id_proveedor OFFSET ? ROWS FETCH NEXT 21 ROWS ONLY",[...$supplierParams,($supplierPage-1)*20])->fetchAll();
+        $more=count($suppliers)>20;if($more)array_pop($suppliers);
+        echo json_encode(['items'=>$suppliers,'has_more'=>$more,'page'=>$supplierPage],JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);
+    } catch(Throwable $e) {
+        error_log((string)$e);http_response_code(422);
+        echo json_encode(['error'=>'No se pudieron consultar los proveedores. Intente nuevamente.']);
+    }
+    exit;
+}
 if (isset($_GET['lookup'])) {
     session_write_close();
     try {

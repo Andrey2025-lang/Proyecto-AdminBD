@@ -19,7 +19,7 @@ class FixtureDatabase extends PDO
     public function __construct(private bool $empty) {}
     public function prepare(string $query, array $options = []): PDOStatement|false
     {
-        if(str_contains($query,'RP21_CONFIG_FISCAL'))return new FixtureStatement([['porcentaje'=>'13.00']]);
+        if(str_contains($query,'RP21_CONFIG_FISCAL'))return new FixtureStatement([['porcentaje'=>'13.00','tarifa_venta'=>1]]);
         if(str_contains($query,'RP20_TARIFAS_IVA'))return new FixtureStatement([['id_tarifa'=>1,'nombre'=>'IVA general','porcentaje'=>'13.00']]);
         if(str_contains($query,'RP17_CONFIG_RESPALDOS'))return new FixtureStatement([['intervalo_manual_minutos'=>5,'intervalo_completo_horas'=>24,'intervalo_registro_minutos'=>30]]);
         if(str_contains($query,'RP16_RESPALDOS'))return new FixtureStatement($this->empty?[]:[['id_respaldo'=>1,'inicio'=>'2026-10-30 10:00:00','fin'=>'2026-10-30 10:00:01','tipo'=>'COMPLETO','estado'=>'VERIFICADO','origen'=>'MANUAL']]);
@@ -49,6 +49,8 @@ foreach ([true, false] as $empty) {
         renderPage(new FixtureDatabase($empty), $page);
         $html = ob_get_clean();
         if ($html === '' || str_contains($html, 'Filtro <prueba>')) throw new RuntimeException('Error de renderizado o escape: ' . $page);
+        if ($page==='compras' && (!str_contains($html,'data-purchase-discovery') || str_contains($html,'Sin desglose de IVA confirmado') || str_contains($html,'name="confirmar_iva"'))) throw new RuntimeException('La compra debe ofrecer búsqueda por repuesto e IVA siempre incluido.');
+        if ($page==='repuestos' && str_contains($html,'part_detail=')) throw new RuntimeException('Repuestos no debe incluir la consulta de proveedores.');
         if (preg_match('/prototipo|académico|entorno local|SQL Server|PHP|HTMX|Bulma|triggers|transaccional/iu', strip_tags($html))) {
             throw new RuntimeException('La pantalla contiene etiquetas técnicas: ' . $page);
         }

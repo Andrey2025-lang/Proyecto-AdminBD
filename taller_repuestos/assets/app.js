@@ -84,11 +84,12 @@
         const quantity = document.querySelector('#cantidad');
         const priceInput = document.querySelector('#precio_unitario');
         const sale = part.dataset.operation === 'sale';
-        if (!sale && changed === part && priceInput) priceInput.value = part.value ? (part.dataset.price||'') : '0.00';
+        const supplierSelected=!!document.querySelector('#id_proveedor')?.value;
+        if (!sale && changed === part && priceInput) priceInput.value = part.value && supplierSelected ? (part.dataset.price||'') : '0.00';
         const price = sale ? Number(part.dataset.price || 0) : Number(priceInput?.value || 0);
         if (!document.querySelector('.cart-editor')) document.querySelector('#total-preview').textContent = format.format(price * Number(quantity.value || 0));
         document.querySelector('#stock-hint').textContent = part.value
-            ? `Existencias: ${part.dataset.stock} unidades.${sale ? ` Precio unitario: ${format.format(price)}` : (part.dataset.price?` Costo de referencia del proveedor: ${format.format(price)}. Confirme el costo real.`:' Sin costo de referencia: indique el costo real de compra.')}`
+            ? `Existencias: ${part.dataset.stock} unidades.${sale ? ` Precio unitario: ${format.format(price)}` : (!supplierSelected?' Elija un proveedor para continuar.':(part.dataset.price?` Costo de referencia del proveedor: ${format.format(price)}. Confirme el costo real con IVA incluido.`:' Sin costo de referencia: indique el costo real de compra con IVA incluido.'))}`
             : 'Seleccione una referencia para consultar sus existencias.';
         if (sale) {
             quantity.max = part.value ? part.dataset.stock : '2147483647';
@@ -133,6 +134,7 @@
         }
         state.reset=()=>{ state.controller?.abort(); clearTimeout(state.timer); state.sequence++; input.value=''; clearSelection(); close(); };
         widget.addEventListener('reset-selection',()=>state.reset());
+        widget.addEventListener('select-item',event=>choose(event.detail));
         function activate(index) {
             const options = list.querySelectorAll('[role=option]');
             state.active = index;
@@ -178,10 +180,6 @@
             state.controller?.abort();
             const sequence = ++state.sequence;
             const supplier=widget.dataset.lookup==='repuestos_compra'?widget.closest('form').querySelector('#id_proveedor')?.value:null;
-            if(widget.dataset.lookup==='repuestos_compra'&&!supplier) {
-                list.replaceChildren();state.items=[];state.page=0;more.hidden=true;state.loading=false;
-                status.textContent='Seleccione primero el proveedor. Después verá sus repuestos habilitados.';return;
-            }
             if (term !== '' && [...term].length < 2) {
                 list.replaceChildren(); more.hidden = true; state.items = []; state.page = 0;
                 state.loading = false; status.textContent = 'Escriba al menos 2 caracteres para buscar.'; return;
@@ -191,7 +189,8 @@
             status.textContent = 'Buscando…';
             const controller = new AbortController(); state.controller = controller;
             const url = new URL('index.php', location.href);
-            url.search = new URLSearchParams({ lookup: widget.dataset.lookup, operation: widget.dataset.operation, term, lp: String(state.page + 1) });
+            const kind=widget.dataset.lookup==='repuestos_compra'&&!supplier?'repuestos':widget.dataset.lookup;
+            url.search = new URLSearchParams({ lookup: kind, operation: widget.dataset.operation, term, lp: String(state.page + 1) });
             if(supplier)url.searchParams.set('proveedor',supplier);
             try {
                 const response = await fetch(url, { signal: controller.signal, headers: { Accept: 'application/json' } });

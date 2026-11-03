@@ -162,8 +162,8 @@ function action(PDO $db): string
     $token = validateOperationToken($action);
     $counterparty = integerInput($action === 'sale' ? 'id_cliente' : 'id_proveedor');
     $seller = $action === 'sale' ? integerInput('id_vendedor') : null;
-    $purchaseTax=$action==='purchase'&&isset($_POST['tarifa_compra'])?integerInput('tarifa_compra',0):0;
-    if($purchaseTax && ($_POST['confirmar_iva']??'')!=='1')throw new InvalidArgumentException('Confirme que el comprobante del proveedor indica IVA incluido con la tarifa seleccionada.');
+    $purchaseTax=$action==='purchase'?integerInput('tarifa_compra'):0;
+    if($action==='purchase' && !rows($db,'SELECT id_tarifa FROM dbo.RP20_TARIFAS_IVA WHERE id_tarifa=? AND activo=1',[$purchaseTax]))throw new InvalidArgumentException('Seleccione una tarifa de IVA activa. Los precios de compra siempre incluyen IVA.');
     // El precio del catálogo no forma parte de la identidad del envío de venta:
     // puede cambiar después de confirmarlo, sin convertir su reenvío en otra venta.
     $identity=array_map(static fn($line)=>[$line['id_repuesto'],$line['cantidad'],$action==='purchase'?$line['precio_unitario']:null],$lines);
@@ -209,7 +209,7 @@ function action(PDO $db): string
             $operationId=(int)$purchase[0]['id_compra']; $params=[];
             foreach($lines as $line) array_push($params,$operationId,$line['id_repuesto'],$line['cantidad'],$line['precio_unitario'],decimal(moneyCents($line['precio_unitario'])*$line['cantidad']));
             run($db,'INSERT INTO RP10_DETALLE_COMPRAS(id_compra,id_repuesto,cantidad,precio_unitario,subtotal) VALUES '.implode(',',array_fill(0,count($lines),'(?,?,?,?,?)')),$params);
-            if($purchaseTax)run($db,"EXEC dbo.sp_RP_RegistrarIVA @tipo='compra',@id=?,@id_tarifa=?",[$operationId,$purchaseTax]);
+            run($db,"EXEC dbo.sp_RP_RegistrarIVA @tipo='compra',@id=?,@id_tarifa=?",[$operationId,$purchaseTax]);
         }
         run($db,'UPDATE RP14_SOLICITUDES_OPERACION SET id_operacion=? WHERE solicitud=?',[$operationId,$token]);
         $db->commit();
