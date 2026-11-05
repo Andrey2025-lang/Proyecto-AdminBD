@@ -43,7 +43,7 @@ class FixtureDatabase extends PDO
 $_SESSION = ['csrf'=>'token-de-prueba'];
 $count = 0;
 foreach ([true, false] as $empty) {
-    foreach (['inicio','repuestos','clientes','proveedores','compras','ventas','inventario','reportes'] as $page) {
+    foreach (['inicio','repuestos','clientes','proveedores','compras','ventas','inventario','reportes','respaldos'] as $page) {
         $_GET = ['edit'=>$empty?'0':'1', 'detail'=>'1', 'q'=>'Filtro'];
         ob_start();
         renderPage(new FixtureDatabase($empty), $page);
@@ -51,6 +51,12 @@ foreach ([true, false] as $empty) {
         if ($html === '' || str_contains($html, 'Filtro <prueba>')) throw new RuntimeException('Error de renderizado o escape: ' . $page);
         if (preg_match('/prototipo|académico|entorno local|SQL Server|PHP|HTMX|Bulma|triggers|transaccional/iu', strip_tags($html))) {
             throw new RuntimeException('La pantalla contiene etiquetas técnicas: ' . $page);
+        }
+        if ($page === 'inicio' && (str_contains($html, 'Respaldo de la información') || !str_contains($html, 'class="button is-primary home-sale-cta"'))) {
+            throw new RuntimeException('Inicio debe omitir respaldos y destacar Nueva venta.');
+        }
+        if ($page === 'respaldos' && (!str_contains($html, 'Respaldo de la información') || !str_contains($html, 'action="index.php?page=respaldos"'))) {
+            throw new RuntimeException('La pantalla de respaldos o su formulario no se renderizaron.');
         }
         echo 'OK: ' . $page . ($empty ? ' vacío' : ' con registros') . PHP_EOL;
         $count++;

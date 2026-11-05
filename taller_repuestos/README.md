@@ -23,7 +23,7 @@ Se verificaron las siete pantallas contra SQL Server y el flujo real desde HTTP:
 - Comprobación previa de códigos de barras y cédulas repetidos, incluso al editar (se permite conservar el valor del propio registro). SQL Server mantiene sus restricciones UNIQUE como protección final ante peticiones simultáneas.
 - Categorías repetidas rechazadas por la aplicación y la base: se ignoran mayúsculas/minúsculas y espacios al inicio/final. Las tildes se conservan como diferencia según la intercalación española configurada. Referencias a categorías, clientes y proveedores comprobadas antes de guardar. Los precios, cantidades, longitudes y estados también se validan en el servidor.
 - Protección de reenvíos de compras y ventas mediante claves de formulario firmadas y un registro transaccional en la base. Reenviar una operación confirmada no vuelve a modificar existencias ni historial, incluso desde conexiones simultáneas. Una operación nueva con los mismos datos sigue siendo válida.
-- Menú lateral automático al pasar el mouse, con ajuste del ancho del contenido. El botón Menú permite fijarlo abierto y conserva esa preferencia. En móvil funciona al tocarlo. Solo se muestran los siete módulos originales; Reportes, Usuarios, Categorías y respaldos no agregan accesos al menú.
+- Menú lateral automático al pasar el mouse, con ajuste del ancho del contenido. El botón Menú permite fijarlo abierto y conserva esa preferencia. En móvil funciona al tocarlo. Incluye Inicio, Repuestos, Clientes, Proveedores, Compras, Ventas, Inventario y Respaldo de la información; Reportes, Usuarios y Categorías no agregan accesos al menú.
 - Edición de repuestos, clientes y proveedores en ventana superpuesta: errores dentro del formulario y actualización del listado conservando filtros/página. Cambiar de módulo devuelve la pantalla al inicio; paginar conserva la zona de navegación.
 - Paginación predeterminada de 15 filas, con selector al pie; existencias e historial tienen 10 por sección y controles independientes.
 - Reportes Excel `.xlsx`, CSV y documento imprimible para guardar como PDF. Filas, metadatos y totales se consultan de forma consistente desde la base.
@@ -186,7 +186,7 @@ Abrir **Reportes**, seleccionar el tipo de informe, sus fechas y el formato. Tam
 
 ### Respaldo manual desde Inicio
 
-Aplicar `sql/009_respaldos_manuales.sql` después de 005. En **Inicio → Respaldo de la información → Crear respaldo** se solicita una copia completa `COPY_ONLY`, con nombre único, CHECKSUM, compresión y VERIFYONLY. Nunca reemplaza la base ni elimina copias anteriores. No ofrece restauración desde la página.
+Aplicar `sql/009_respaldos_manuales.sql` después de 005. En **Menú lateral → Respaldo de la información → Crear respaldo** se solicita una copia completa `COPY_ONLY`, con nombre único, CHECKSUM, compresión y VERIFYONLY. Nunca reemplaza la base ni elimina copias anteriores. No ofrece restauración desde la página.
 
 El historial, los resultados y los intervalos se consultan de SQL Server: `RP16_RESPALDOS` y `RP17_CONFIG_RESPALDOS`. Valores iniciales: completo automático cada 24 horas, registro cada 30 minutos y cinco minutos entre solicitudes manuales. El bloqueo `Repuesto.Respaldos` es compartido por las ejecuciones manuales y automáticas. Un intento manual fallido registrado también consume el intervalo para evitar repeticiones continuas. Una solicitud interrumpida debe revisarse antes de repetirla; un registro en proceso no prueba por sí solo que la tarea siga activa.
 

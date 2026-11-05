@@ -175,8 +175,15 @@ function renderPage(PDO $db, string $page): void
         'compras', 'ventas' => operationsPage($db, $page),
         'inventario' => inventoryPage($db),
         'reportes' => reportsPage($db),
+        'respaldos' => backupsPage($db),
         default => dashboard($db),
     };
+}
+
+function backupsPage(PDO $db): void
+{
+    require_once __DIR__.'/Backups.php';
+    backupPanel($db);
 }
 
 function dashboard(PDO $db): void
@@ -188,14 +195,12 @@ function dashboard(PDO $db): void
     $low = rows($db, "SELECT TOP (6) nombre, stock_actual, stock_minimo FROM RP03_REPUESTOS WHERE estado='ACTIVO' AND stock_actual <= stock_minimo ORDER BY stock_actual, nombre");
     $recent = rows($db, 'SELECT TOP (6) V.id_venta,V.fecha,V.total,C.nombre FROM RP07_VENTAS V JOIN RP05_CLIENTES C ON C.id_cliente=V.id_cliente ORDER BY V.fecha DESC,V.id_venta DESC');
     dashboardView($stats, $low, $recent);
-    require_once __DIR__.'/Backups.php';
-    backupPanel($db);
 }
 
 function dashboardView(array $stats, array $low, array $recent): void
 {
     ?>
-    <section class="welcome"><div><p class="eyebrow">TODO BAJO CONTROL</p><h2>Tu taller, en movimiento.</h2><p>Consulta tus existencias y registra cada entrada y salida.</p><a class="button is-primary" href="index.php?page=ventas" hx-get="index.php?page=ventas" hx-target="#content" hx-push-url="true">Registrar una venta <span aria-hidden="true">↗</span></a></div><div class="welcome-art" aria-hidden="true"><div class="art-box">R<span>+</span></div><span class="art-label">INVENTARIO CONECTADO</span></div></section>
+    <section class="welcome"><div><p class="eyebrow">TODO BAJO CONTROL</p><h2>Tu taller, en movimiento.</h2><p>Consulta tus existencias y registra cada entrada y salida.</p><a class="button is-primary home-sale-cta" href="index.php?page=ventas" hx-get="index.php?page=ventas" hx-target="#content" hx-push-url="true"><span class="home-sale-cta-icon" aria-hidden="true">+</span>Nueva venta<span aria-hidden="true">↗</span></a></div><div class="welcome-art" aria-hidden="true"><div class="art-box">R<span>+</span></div><span class="art-label">INVENTARIO CONECTADO</span></div></section>
     <div class="stats-grid">
     <?php foreach ([['Repuestos activos', $stats['partes'], 'Referencias en el catálogo', '▦'], ['Ventas de hoy', money($stats['vendido']), 'Importe en moneda del negocio', '↗'], ['Existencias bajas', $stats['bajos'], 'En el mínimo o por debajo', '↘'], ['Clientes', $stats['clientes'], 'Clientes registrados', '♙']] as [$title,$number,$caption,$icon]): ?>
         <article class="stat-card"><div><span><?= e($title) ?></span><span class="stat-icon" aria-hidden="true"><?= $icon ?></span></div><strong><?= e($number) ?></strong><small><?= e($caption) ?></small></article>
