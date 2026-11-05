@@ -7,6 +7,8 @@ header('Cache-Control: no-store');
 require __DIR__ . '/src/Database.php';
 require __DIR__ . '/src/Actions.php';
 require __DIR__ . '/src/Views.php';
+require __DIR__ . '/src/HaciendaClient.php';
+require __DIR__ . '/src/HaciendaEndpoint.php';
 
 $_SESSION['csrf'] ??= bin2hex(random_bytes(32));
 $pages = ['inicio' => 'Resumen general', 'repuestos' => 'Repuestos', 'clientes' => 'Clientes',
@@ -22,12 +24,52 @@ unset($_SESSION['completed_operation']);
 $setup = null;
 $db = null;
 if (isset($_GET['preview'])) { header('Location: index.php',true,303); exit; }
+if (isset($_GET['hacienda_consulta'])) {
+    header('Content-Type: application/json; charset=UTF-8');
+    if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
+        http_response_code(405);
+        header('Allow: GET');
+        echo json_encode(['ok'=>false,'data'=>null,'error'=>['code'=>'metodo_no_permitido','message'=>'Use una solicitud GET.','retryable'=>false],'cached'=>false], JSON_UNESCAPED_UNICODE);
+        session_write_close();
+        exit;
+    }
+    try {
+        $response = HaciendaEndpoint::handle(new HaciendaClient(), $_SESSION, $_GET['identificacion'] ?? null);
+        http_response_code($response['status']);
+        echo json_encode($response['body'], JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
+    } catch (Throwable $e) {
+        error_log((string)$e);
+        http_response_code(502);
+        echo json_encode(['ok'=>false,'data'=>null,'error'=>['code'=>'servicio_no_disponible','message'=>'Hacienda no está disponible en este momento. Puede continuar registrando el cliente manualmente.','retryable'=>true],'cached'=>false], JSON_UNESCAPED_UNICODE);
+    }
+    session_write_close();
+    exit;
+}
 try {
     $db = database();
 } catch (RuntimeException $e) {
     error_log($e->getMessage());
     $setup = 'No se pudo acceder a la información del taller. Revise la configuración de conexión o contacte al administrador.';
     http_response_code(503);
+}
+if (isset($_GET['part_suppliers'])) {
+    session_write_close();
+    header('Content-Type: application/json; charset=UTF-8');
+    try {
+        if (!$db) throw new RuntimeException('Conexión no disponible.');
+        $part=queryInteger('part_suppliers',0);$supplierPage=queryInteger('sp',1);
+        if ($part<1 || $supplierPage<1 || $supplierPage>5000) throw new InvalidArgumentException('Búsqueda inválida.');
+        $filterSupplier=queryInteger('supplier',0);
+        $supplierWhere=$filterSupplier?' AND P.id_proveedor=?':'';
+        $supplierParams=[$part];if($filterSupplier)$supplierParams[]=$filterSupplier;
+        $suppliers=queryStatement($db,"SELECT P.id_proveedor id,P.nombre_empresa label,C.costo_referencia,C.codigo_proveedor,R.id_repuesto,R.nombre,R.codigo_barras,R.stock_actual FROM dbo.RP19_PROVEEDOR_REPUESTO C JOIN dbo.RP02_PROVEEDORES P ON P.id_proveedor=C.id_proveedor JOIN dbo.RP03_REPUESTOS R ON R.id_repuesto=C.id_repuesto WHERE C.id_repuesto=? AND C.estado='ACTIVO' AND R.estado='ACTIVO'".$supplierWhere." ORDER BY P.nombre_empresa,P.id_proveedor OFFSET ? ROWS FETCH NEXT 21 ROWS ONLY",[...$supplierParams,($supplierPage-1)*20])->fetchAll();
+        $more=count($suppliers)>20;if($more)array_pop($suppliers);
+        echo json_encode(['items'=>$suppliers,'has_more'=>$more,'page'=>$supplierPage],JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);
+    } catch(Throwable $e) {
+        error_log((string)$e);http_response_code(422);
+        echo json_encode(['error'=>'No se pudieron consultar los proveedores. Intente nuevamente.']);
+    }
+    exit;
 }
 if (isset($_GET['lookup'])) {
     session_write_close();
@@ -176,4 +218,5 @@ if ($partial) { echo $content; exit; }
 <script src="assets/backups.js?v=<?= filemtime(__DIR__.'/assets/backups.js') ?>" defer></script>
 <script src="assets/filters.js?v=<?= filemtime(__DIR__.'/assets/filters.js') ?>" defer></script>
 <script src="assets/supplier-catalog.js?v=<?= filemtime(__DIR__.'/assets/supplier-catalog.js') ?>" defer></script>
+<script src="assets/client-hacienda.js?v=<?= filemtime(__DIR__.'/assets/client-hacienda.js') ?>" defer></script>
 </body></html>

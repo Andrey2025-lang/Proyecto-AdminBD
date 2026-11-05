@@ -140,7 +140,9 @@ Aplicar `sql/010_iva_incluido.sql` después de 004. Las ventas nuevas interpreta
 
 `sp_ProcesarVentaMultiple` llama a `sp_RP_RegistrarIVA` antes del COMMIT. Por cada renglón guarda la tarifa utilizada, base redondeada a dos decimales (`total / (1 + tarifa/100)`) e IVA como diferencia respecto al total final. El encabezado suma las bases y los impuestos de los renglones; las restricciones verifican que base más IVA coincida con el total. Cambiar la tarifa configurada afecta operaciones futuras, no documentos confirmados. La vista previa es orientativa; el cálculo definitivo y su validación se realizan en la base.
 
-En compras se ingresa el costo final pagado. Por defecto **no hay desglose confirmado**, que no equivale a compra exenta. Solo se extrae el IVA cuando se selecciona una tarifa y se confirma que todos los precios incluyen esa tarifa según el comprobante del proveedor. Para tarifas mixtas, exoneraciones, o diferencias con el desglose del proveedor, no activar esa opción: este flujo no representa todavía esos casos. Nunca se presume el IVA del proveedor por tener un producto asociado.
+En compras nuevas se ingresa el costo final **siempre con IVA incluido** y se selecciona una tarifa activa según el comprobante del proveedor. Se preselecciona la tarifa configurada para ventas. No hay opción de guardar sin desglose ni casilla de confirmación: el servidor exige una tarifa válida y extrae el impuesto sin aumentar el total. Este formulario admite una tarifa por compra; no representa comprobantes con tarifas mixtas ni exoneraciones. Las compras históricas no se modifican.
+
+En **Compras** hay un único buscador de repuestos y un buscador opcional de proveedor. Puede empezar por cualquiera: al seleccionar primero un repuesto aparecen sus proveedores habilitados, paginados de 20 en 20, con costo de referencia y código cuando existan. **Comprar a este proveedor** conserva el repuesto elegido y carga su costo. También puede buscar directamente el proveedor; si ya había un repuesto elegido, se comprueba su oferta y se conserva únicamente cuando esté habilitado. Si no pertenece al catálogo, se avisa y se limpia esa selección. Al elegir proveedor, su buscador se sustituye por un resumen con **Cambiar proveedor**. Los siguientes repuestos se buscan en su catálogo; para cambiar proveedor hay que vaciar primero el carrito. No se muestran relaciones pendientes ni inactivas como oferta confirmada; el catálogo no garantiza disponibilidad. El servidor sigue validando todas las relaciones. Esta consulta no aparece en Repuestos.
 
 El detalle y los comprobantes muestran «Los precios incluyen IVA», tarifa, base e impuesto cuando están registrados. Los reportes separan IVA registrado y cantidad de operaciones sin desglose; no extrapolan impuestos a toda la historia. Las operaciones anteriores conservan todos sus importes y quedan con base/IVA nulos, mostrando «Desglose de IVA no registrado». No se han añadido descuentos, otros impuestos ni un DW nuevo en esta mejora.
 
@@ -267,6 +269,7 @@ Get-ChildItem '.\taller_repuestos' -Filter *.php -Recurse | ForEach-Object { & '
 & 'C:\php\php.exe' '.\taller_repuestos\tests\duplicidad.php'
 node --check '.\taller_repuestos\assets\app.js'
 node --check '.\taller_repuestos\assets\operations.js'
+node '.\taller_repuestos\tests\compra_por_repuesto.mjs'
 node --check '.\taller_repuestos\assets\editor.js'
 python '.\taller_repuestos\tests\paginacion.py'
 python '.\taller_repuestos\tests\reportes.py'
