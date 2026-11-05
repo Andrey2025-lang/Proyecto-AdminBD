@@ -260,3 +260,65 @@ a,.has-text-danger,.is-danger,.tag.is-danger,.notification.is-danger{color:#2021
 .hacienda-client{margin:-5px 0 17px}.hacienda-status{min-height:18px;margin:0}.hacienda-status.is-loading{color:#557864}.hacienda-status.is-error{color:#a0574f}.hacienda-status.is-success{color:#277252}.hacienda-status.is-warning{color:#9a7629}.hacienda-details{margin-top:10px;padding:15px;border:1px solid #dce9df;border-radius:9px;background:#f8fbf8}.hacienda-details h3{font-size:11px;font-weight:700;color:#39704f;margin:0 0 13px}.hacienda-data-grid{display:grid;grid-template-columns:1fr 1fr;gap:11px 16px}.hacienda-data-grid>div{min-width:0}.hacienda-data-grid dt{font-size:9px;color:#829388}.hacienda-data-grid dd{margin:3px 0 0;font-size:10px;color:#385345;overflow-wrap:anywhere}.hacienda-activities{margin-top:14px;padding-top:12px;border-top:1px solid #e2ece4}.hacienda-activities h4{font-size:10px;font-weight:700;color:#597565;margin:0 0 8px}.hacienda-activity{padding:9px 10px;margin-top:7px;border-radius:6px;background:#fff;border:1px solid #e5eee6}.hacienda-activity dl{display:grid;grid-template-columns:auto 1fr;gap:4px 9px;margin:0}.hacienda-activity dt{font-size:9px;color:#829388}.hacienda-activity dd{margin:0;font-size:10px;color:#405a4a;overflow-wrap:anywhere}.hacienda-activity-empty{font-size:10px;color:#829388;margin:0}
 @media(max-width:680px){.hacienda-data-grid{grid-template-columns:1fr}}
 .hacienda-status.is-error{color:#202124}
+@media(min-width:681px){body.sidebar-collapsed .sidebar .nav-link>span:first-child{position:relative;flex:0 0 38px}body.sidebar-collapsed .sidebar .nav-link>span:first-child:before{position:absolute;top:50%;left:50%;margin:0;transform:translate(-50%,-50%)}}
+@media(min-width:681px){body.sidebar-collapsed .sidebar .sidebar-pin{margin-bottom:20px}}
+@media(min-width:681px){.sidebar{inset:12px auto 12px 12px;border:1px solid #ffffff3d;border-radius:24px;box-shadow:0 18px 42px #11121635,inset 0 1px #ffffff18}.workspace{margin-left:calc(var(--sidebar-width) + 36px)}body.sidebar-collapsed .workspace{margin-left:116px}}
+@media(min-width:681px){.topbar{margin:12px 12px 0;border:1px solid #ffffffb8!important;border-radius:20px}}
+html{background:#fff}body:before{background:#fff}
+.welcome:before{background:linear-gradient(90deg,transparent,#fff,#20212424,transparent)}
+.welcome:after{border-color:#20212424;box-shadow:0 0 0 25px #2021240a,0 0 0 55px #20212408}
+.topbar .topbar-start>span,.topbar .topbar-start .muted{color:#000!important}
+.operations-layout.operations-entry-layout{grid-template-columns:minmax(0,1fr);gap:14px}
+.operations-layout.operations-entry-layout>.form-panel,.operations-layout.operations-entry-layout>.list-panel{grid-column:1;max-width:none;width:100%}
+.operations-layout.operations-entry-layout>.form-panel{grid-row:1;padding:0 22px 18px}
+.operations-layout.operations-entry-layout>.list-panel{grid-row:2}
+.operations-entry-layout>.form-panel .panel-heading-custom{padding:17px 0 12px}
+.operations-entry-layout>.form-panel>form{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));align-items:end;gap:0 14px}
+.operations-entry-layout>.form-panel>form>.field{min-width:0;margin-bottom:12px!important}
+.operations-entry-layout>.form-panel>form>[data-supplier-picker]{display:contents}
+.operations-entry-layout>.form-panel>form>[data-supplier-picker]>.help{grid-column:1/-1;margin:0 0 6px!important}
+.operations-entry-layout .cart-editor{display:grid;grid-column:1/-1;grid-template-columns:repeat(4,minmax(0,1fr));align-items:end;gap:0 12px}
+.operations-entry-layout .cart-heading,.operations-entry-layout .cart-alert,.operations-entry-layout .cart-table-wrap,.operations-entry-layout .total-preview,.operations-entry-layout .fiscal-preview{grid-column:1/-1}
+.operations-entry-layout .cart-heading{margin:8px 0 10px;padding-top:10px}
+.operations-entry-layout .cart-editor>.field{min-width:0;margin-bottom:10px!important}
+.operations-entry-layout .cart-editor>.field.autocomplete{grid-column:span 2}
+.operations-entry-layout .cart-editor>#stock-hint{grid-column:1/-1;margin:0 0 8px!important;align-self:center}
+.operations-entry-layout .cart-editor>.button[data-cart-add]{grid-column:span 2;width:100%;margin-bottom:10px}
+.operations-entry-layout .cart-table-wrap{margin:4px 0 0}
+.operations-entry-layout .total-preview{margin:12px 0}
+.operations-entry-layout .fiscal-preview{margin:0 0 10px!important;line-height:1.45}
+.operations-entry-layout>.form-panel>form>.help{grid-column:1/-1;margin:4px 0 0!important}
+.operations-entry-layout .cart-editor>[data-part-suppliers],.operations-entry-layout .cart-editor>[data-selected-supplier],.operations-entry-layout .cart-editor>.help:not(#stock-hint),.operations-entry-layout .cart-editor>[data-cart-clear]{grid-column:1/-1}
+.operations-entry-layout .cart-editor .field{margin-bottom:10px!important}
+.operations-entry-layout>.form-panel>form>.notification{grid-column:1/-1;margin-bottom:10px}
+.operations-entry-layout>.form-panel>form>[data-supplier-picker]>.field{grid-column:span 1}
+.operations-entry-layout>.form-panel>form>[data-cart-submit]{grid-column:1/-1}
+.operations-entry-layout .cart-editor>[data-part-suppliers],.operations-entry-layout .cart-editor>.help:not(#stock-hint){font-size:10px;line-height:1.4;margin-top:3px!important;margin-bottom:8px!important}
+.operations-entry-layout .cart-editor>.field:not(.autocomplete),.operations-entry-layout .cart-editor>.filter-field{grid-column:span 1}
+.operations-entry-layout .cart-editor>.button[data-cart-add]{grid-column:span 1}
+.operations-entry-layout .cart-editor>[data-cart-submit]{grid-column:1/-1;width:100%}
+.operations-entry-layout .cart-inputs{display:grid;grid-column:1/-1;grid-template-columns:repeat(4,minmax(0,1fr));align-items:end;gap:0 12px}
+.operations-entry-layout .cart-inputs>.field,.operations-entry-layout .cart-inputs>.filter-field{min-width:0;margin-bottom:8px!important}
+.operations-entry-layout .cart-inputs>[data-cart-add]{grid-column:span 1;width:100%;margin-bottom:8px}
+.operations-entry-layout .cart-editor[data-operation="sale"] .cart-inputs{grid-template-columns:repeat(2,minmax(0,1fr))}
+.operations-entry-layout .cart-editor .cart-tax-help{grid-column:1/-1;margin:0 0 8px!important}
+.operations-entry-layout .cart-table .empty-state{padding:10px!important}
+.operations-entry-layout .cart-table-wrap.is-empty thead{display:none}
+.operations-entry-layout .cart-table{margin-bottom:0}
+@media(max-width:680px){.operations-layout.operations-entry-layout>.form-panel{padding:0 18px 16px}.operations-entry-layout>.form-panel>form{grid-template-columns:1fr;gap:0}.operations-entry-layout>.form-panel>form>.field,.operations-entry-layout>.form-panel>form>.help,.operations-entry-layout>.form-panel>form>.notification,.operations-entry-layout .cart-editor{grid-column:1}.operations-entry-layout .cart-editor{grid-template-columns:repeat(2,minmax(0,1fr));gap:0 10px}.operations-entry-layout .cart-editor>.field.autocomplete,.operations-entry-layout .cart-editor>#stock-hint,.operations-entry-layout .cart-editor>.button[data-cart-add]{grid-column:1/-1}}
+@media(max-width:680px){.operations-entry-layout .cart-inputs{grid-template-columns:repeat(2,minmax(0,1fr));gap:0 10px}.operations-entry-layout .cart-inputs>[data-cart-add]{grid-column:1/-1}}
+.management-layout{display:grid;grid-template-columns:minmax(0,1fr);gap:14px;align-items:start}
+.management-layout>.form-panel,.management-layout>.list-panel,.management-layout>.category-panel{grid-column:1;width:100%;max-width:none}
+.management-layout>.form-panel{grid-row:1;padding:0 22px 18px}
+.management-layout>.list-panel{grid-row:2}
+.management-layout>.category-panel{grid-row:3;margin-top:0}
+.management-layout .form-panel .panel-heading-custom{padding:17px 0 12px}
+.management-layout .form-panel form{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));align-items:end;gap:0 14px}
+.management-layout .form-panel form>.field{min-width:0;margin-bottom:12px!important}
+.management-layout .form-panel form>.help,.management-layout .form-panel form>.notification,.management-layout .form-panel form>.hacienda-client,.management-layout .form-panel form>.button,.management-layout .form-panel form>.form-grid{grid-column:1/-1}
+.management-layout .form-panel form>.button{width:100%}
+.parts-layout .form-panel form>.management-fields{display:grid;grid-column:1/-1;grid-template-columns:repeat(4,minmax(0,1fr));align-items:end;gap:0 14px}
+.parts-layout .form-panel form>.management-fields>.field{min-width:0;margin-bottom:12px!important}
+@media(max-width:960px){.management-layout .form-panel form{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:960px){.parts-layout .form-panel form>.management-fields{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:680px){.management-layout .form-panel{padding:0 18px 16px}.management-layout .form-panel form{grid-template-columns:1fr;gap:0}.management-layout .form-panel form>.field,.management-layout .form-panel form>.help,.management-layout .form-panel form>.notification,.management-layout .form-panel form>.hacienda-client,.management-layout .form-panel form>.button,.management-layout .form-panel form>.form-grid{grid-column:1}.parts-layout .form-panel form>.management-fields{grid-template-columns:1fr}}

@@ -61,6 +61,13 @@ foreach ([true, false] as $empty) {
         if ($page === 'respaldos' && (!str_contains($html, 'Respaldo de la información') || !str_contains($html, 'action="index.php?page=respaldos"'))) {
             throw new RuntimeException('La pantalla de respaldos o su formulario no se renderizaron.');
         }
+        if (in_array($page, ['ventas','compras'], true)) {
+            $formPosition=strpos($html, 'class="panel-card form-panel"');
+            $listPosition=strpos($html, 'class="panel-card list-panel"');
+            if (!str_contains($html, 'operations-entry-layout') || $formPosition===false || $listPosition===false || $formPosition>$listPosition) {
+                throw new RuntimeException('Ventas y compras deben mostrar primero el formulario y luego el listado.');
+            }
+        }
         echo 'OK: ' . $page . ($empty ? ' vacío' : ' con registros') . PHP_EOL;
         $count++;
     }
