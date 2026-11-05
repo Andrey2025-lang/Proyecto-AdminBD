@@ -99,7 +99,8 @@
                 state.lastAutomaticName = name.value;
             }
             render(form, result.data);
-            setStatus(form, result.cached ? 'Información encontrada (recuperada de caché).' : 'Información encontrada.', 'success');
+            const noInscrito = String(result.data.situacion?.estado || '').trim().toLocaleLowerCase('es-CR') === 'no inscrito';
+            setStatus(form, noInscrito ? 'Información encontrada. El contribuyente figura como No inscrito.' : (result.cached ? 'Información encontrada (recuperada de caché).' : 'Información encontrada.'), noInscrito ? 'warning' : 'success');
         } catch (error) {
             if (error.name === 'AbortError' || sequence !== state.sequence) return;
             state.inFlight = ''; state.completed = id;

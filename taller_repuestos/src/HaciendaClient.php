@@ -129,9 +129,12 @@ final class HaciendaClient
             $payload['nombre'] ?? null, $payload['tipoIdentificacion'] ?? null,
             $payload['regimen']['codigo'] ?? null, $payload['regimen']['descripcion'] ?? null,
             $payload['situacion']['estado'] ?? null, $payload['situacion']['moroso'] ?? null,
-            $payload['situacion']['omiso'] ?? null, $payload['situacion']['administracionTributaria'] ?? null,
+            $payload['situacion']['omiso'] ?? null,
         ];
         foreach ($required as $value) if (!is_scalar($value) || $value === '') return null;
+        // Hacienda deja vacía esta propiedad para contribuyentes no inscritos.
+        $administracion = $payload['situacion']['administracionTributaria'] ?? null;
+        if (!is_scalar($administracion)) return null;
         return [
             'identificacion' => $identificacion,
             'nombre' => (string)$payload['nombre'],
@@ -141,7 +144,7 @@ final class HaciendaClient
                 'estado' => (string)$payload['situacion']['estado'],
                 'moroso' => (string)$payload['situacion']['moroso'],
                 'omiso' => (string)$payload['situacion']['omiso'],
-                'administracion_tributaria' => (string)$payload['situacion']['administracionTributaria'],
+                'administracion_tributaria' => (string)$administracion,
             ],
             // Se conserva sin interpretar: Hacienda puede devolver un arreglo vacío.
             'actividades' => $payload['actividades'],
