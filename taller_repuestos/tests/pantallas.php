@@ -50,6 +50,7 @@ foreach ([true, false] as $empty) {
         $html = ob_get_clean();
         if ($html === '' || str_contains($html, 'Filtro <prueba>')) throw new RuntimeException('Error de renderizado o escape: ' . $page);
         if ($page==='compras' && (!str_contains($html,'data-purchase-discovery') || str_contains($html,'Sin desglose de IVA confirmado') || str_contains($html,'name="confirmar_iva"'))) throw new RuntimeException('La compra debe ofrecer búsqueda por repuesto e IVA siempre incluido.');
+        if ($page==='clientes' && (!str_contains($html,'data-hacienda-identificacion') || !str_contains($html,'data-client-hacienda-panel') || !str_contains($html,'data-hacienda-activities'))) throw new RuntimeException('Clientes debe incluir los puntos de integración de Hacienda.');
         if ($page==='repuestos' && str_contains($html,'part_detail=')) throw new RuntimeException('Repuestos no debe incluir la consulta de proveedores.');
         if (preg_match('/prototipo|académico|entorno local|SQL Server|PHP|HTMX|Bulma|triggers|transaccional/iu', strip_tags($html))) {
             throw new RuntimeException('La pantalla contiene etiquetas técnicas: ' . $page);
