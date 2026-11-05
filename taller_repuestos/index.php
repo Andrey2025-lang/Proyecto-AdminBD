@@ -7,6 +7,8 @@ header('Cache-Control: no-store');
 require __DIR__ . '/src/Database.php';
 require __DIR__ . '/src/Actions.php';
 require __DIR__ . '/src/Views.php';
+require __DIR__ . '/src/HaciendaClient.php';
+require __DIR__ . '/src/HaciendaEndpoint.php';
 
 $_SESSION['csrf'] ??= bin2hex(random_bytes(32));
 $pages = ['inicio' => 'Resumen general', 'repuestos' => 'Repuestos', 'clientes' => 'Clientes',
@@ -21,6 +23,27 @@ unset($_SESSION['completed_operation']);
 $setup = null;
 $db = null;
 if (isset($_GET['preview'])) { header('Location: index.php',true,303); exit; }
+if (isset($_GET['hacienda_consulta'])) {
+    header('Content-Type: application/json; charset=UTF-8');
+    if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
+        http_response_code(405);
+        header('Allow: GET');
+        echo json_encode(['ok'=>false,'data'=>null,'error'=>['code'=>'metodo_no_permitido','message'=>'Use una solicitud GET.','retryable'=>false],'cached'=>false], JSON_UNESCAPED_UNICODE);
+        session_write_close();
+        exit;
+    }
+    try {
+        $response = HaciendaEndpoint::handle(new HaciendaClient(), $_SESSION, $_GET['identificacion'] ?? null);
+        http_response_code($response['status']);
+        echo json_encode($response['body'], JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
+    } catch (Throwable $e) {
+        error_log((string)$e);
+        http_response_code(502);
+        echo json_encode(['ok'=>false,'data'=>null,'error'=>['code'=>'servicio_no_disponible','message'=>'Hacienda no está disponible en este momento. Puede continuar registrando el cliente manualmente.','retryable'=>true],'cached'=>false], JSON_UNESCAPED_UNICODE);
+    }
+    session_write_close();
+    exit;
+}
 try {
     $db = database();
 } catch (RuntimeException $e) {
@@ -194,4 +217,5 @@ if ($partial) { echo $content; exit; }
 <script src="assets/backups.js?v=<?= filemtime(__DIR__.'/assets/backups.js') ?>" defer></script>
 <script src="assets/filters.js?v=<?= filemtime(__DIR__.'/assets/filters.js') ?>" defer></script>
 <script src="assets/supplier-catalog.js?v=<?= filemtime(__DIR__.'/assets/supplier-catalog.js') ?>" defer></script>
+<script src="assets/client-hacienda.js?v=<?= filemtime(__DIR__.'/assets/client-hacienda.js') ?>" defer></script>
 </body></html>

@@ -262,7 +262,24 @@ function contactsPage(PDO $db, string $page): void
     </tbody></table></div><?php pagination($page,$data); ?></section><section class="panel-card form-panel"><?php panelTitle($item ? 'Editar registro' : ($client ? 'Nuevo cliente' : 'Nuevo proveedor')); startForm($page, $client ? 'client' : 'supplier'); ?>
     <input type="hidden" name="id" value="<?= (int)($item[$pk] ?? 0) ?>">
     <?php input($client ? 'Nombre completo' : 'Nombre de la empresa', $name, $item[$name] ?? '', 'text', 'required maxlength="' . ($client ? 100 : 150) . '"');
-    input($client ? 'Cédula' : 'Persona de contacto', $other, $item[$other] ?? '', 'text', 'required maxlength="' . ($client ? 20 : 100) . '"');
+    input($client ? 'Cédula' : 'Persona de contacto', $other, $item[$other] ?? '', 'text', 'required maxlength="' . ($client ? 20 : 100) . '"' . ($client ? ' data-hacienda-identificacion' : ''));
+    if ($client): ?>
+    <div class="hacienda-client" data-client-hacienda-panel hidden>
+        <p class="help hacienda-status" data-hacienda-status role="status" aria-live="polite"></p>
+        <section class="hacienda-details" data-hacienda-details hidden aria-label="Información tributaria de Hacienda">
+            <h3>Información tributaria</h3>
+            <dl class="hacienda-data-grid">
+                <div><dt>Tipo de identificación</dt><dd data-hacienda-tipo></dd></div>
+                <div><dt>Régimen</dt><dd data-hacienda-regimen></dd></div>
+                <div><dt>Estado tributario</dt><dd data-hacienda-estado></dd></div>
+                <div><dt>Moroso</dt><dd data-hacienda-moroso></dd></div>
+                <div><dt>Omiso</dt><dd data-hacienda-omiso></dd></div>
+                <div><dt>Administración tributaria</dt><dd data-hacienda-administracion></dd></div>
+            </dl>
+            <div class="hacienda-activities"><h4>Actividades económicas</h4><div data-hacienda-activities></div></div>
+        </section>
+    </div>
+    <?php endif;
     input('Teléfono', 'telefono', phoneLabel($item['telefono'] ?? ''), 'tel', 'required maxlength="20" placeholder="8888-8888"');
     input('Correo electrónico' . ($client ? ' (opcional)' : ''), 'email', $item['email'] ?? '', 'email', 'maxlength="100" ' . ($client ? '' : 'required')); ?>
     <button class="button is-primary is-fullwidth">Guardar <?= $client ? 'cliente' : 'proveedor' ?></button>
