@@ -32,6 +32,15 @@ checkHacienda($result['ok'] && $result['data']['identificacion'] === '2100042005
 checkHacienda(str_ends_with($url, 'identificacion=2100042005'), 'URL HTTPS usa identificación normalizada');
 checkHacienda($result['data']['nombre'] === 'ESTADO-MINISTERIO DE HACIENDA' && $result['data']['actividades'] === [], 'HTTP 200 normaliza respuesta y actividades vacías');
 
+$noInscrito = json_encode([
+    'nombre' => 'CLIENTE NO INSCRITO', 'tipoIdentificacion' => '01',
+    'regimen' => ['codigo' => 0, 'descripcion' => 'No tiene'],
+    'situacion' => ['estado' => 'No inscrito', 'moroso' => 'NO', 'omiso' => 'NO', 'administracionTributaria' => ''],
+    'actividades' => [],
+], JSON_THROW_ON_ERROR);
+$result = (new HaciendaClient(6, response(['status'=>200,'body'=>$noInscrito,'timed_out'=>false])))->consult('2100042005');
+checkHacienda($result['ok'] && $result['data']['nombre'] === 'CLIENTE NO INSCRITO' && $result['data']['situacion']['administracion_tributaria'] === '', 'contribuyente no inscrito conserva nombre y administración vacía');
+
 $result = (new HaciendaClient(6, response(['status'=>200,'body'=>$valid,'timed_out'=>false])))->consult('12-34');
 checkHacienda(!$result['ok'] && $result['error']['code'] === 'identificacion_invalida', 'identificación inválida no se consulta');
 foreach ([404 => 'no_encontrado', 429 => 'limite_consultas'] as $status => $code) {

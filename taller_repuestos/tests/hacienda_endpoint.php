@@ -32,7 +32,17 @@ $result = HaciendaEndpoint::handle(clientForEndpoint(['status'=>200,'body'=>$pay
 checkEndpoint($result['status'] === 200 && $result['body']['ok'] && !$result['body']['cached'], 'identificación válida devuelve JSON exitoso');
 checkEndpoint($result['body']['data']['identificacion'] === '2100042005' && $result['body']['data']['actividades'] === [], 'respuesta exitosa queda normalizada');
 checkEndpoint(isset($session['hacienda_cache']['2100042005']) && $calls === 1, 'respuesta exitosa se guarda en caché de sesión');
-$cached = HaciendaEndpoint::handle(clientForEndpoint(['status'=>500,'body'=>'','timed_out'=>false], $calls), $session, '2100042005', 1001);
+$cachedSession = $session;
+$noInscrito = json_encode([
+    'nombre' => 'CLIENTE NO INSCRITO', 'tipoIdentificacion' => '01',
+    'regimen' => ['codigo' => 0, 'descripcion' => 'No tiene'],
+    'situacion' => ['estado' => 'No inscrito', 'moroso' => 'NO', 'omiso' => 'NO', 'administracionTributaria' => ''],
+    'actividades' => [],
+], JSON_THROW_ON_ERROR);
+$session = [];
+$result = HaciendaEndpoint::handle(clientForEndpoint(['status'=>200,'body'=>$noInscrito,'timed_out'=>false]), $session, '2100042005', 1000);
+checkEndpoint($result['status'] === 200 && $result['body']['ok'] && $result['body']['data']['nombre'] === 'CLIENTE NO INSCRITO', 'endpoint acepta contribuyente no inscrito');
+$cached = HaciendaEndpoint::handle(clientForEndpoint(['status'=>500,'body'=>'','timed_out'=>false], $calls), $cachedSession, '2100042005', 1001);
 checkEndpoint($cached['status'] === 200 && $cached['body']['cached'] && $calls === 1, 'caché vigente evita una nueva consulta externa');
 
 $session = [];
