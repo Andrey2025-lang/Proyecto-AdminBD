@@ -62,10 +62,12 @@ foreach ([true, false] as $empty) {
             throw new RuntimeException('La pantalla de respaldos o su formulario no se renderizaron.');
         }
         if (in_array($page, ['ventas','compras'], true)) {
-            $formPosition=strpos($html, 'class="panel-card form-panel"');
-            $listPosition=strpos($html, 'class="panel-card list-panel"');
-            if (!str_contains($html, 'operations-entry-layout') || $formPosition===false || $listPosition===false || $formPosition>$listPosition) {
-                throw new RuntimeException('Ventas y compras deben mostrar primero el formulario y luego el listado.');
+            $containerPosition=strpos($html, 'class="panel-card operations-layout operations-entry-layout"');
+            $infoPosition=strpos($html, 'class="info-strip"');
+            $formPosition=strpos($html, 'class="form-panel"');
+            $listPosition=strpos($html, 'class="list-panel"');
+            if ($containerPosition===false || $infoPosition===false || $formPosition===false || $listPosition===false || !($containerPosition<$infoPosition && $infoPosition<$formPosition && $formPosition<$listPosition)) {
+                throw new RuntimeException('Ventas y compras deben agrupar la ayuda, el formulario y el listado en una sola tarjeta.');
             }
         }
         echo 'OK: ' . $page . ($empty ? ' vacío' : ' con registros') . PHP_EOL;

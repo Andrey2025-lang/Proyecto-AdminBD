@@ -296,7 +296,7 @@ function contactsPage(PDO $db, string $page): void
 function operationsList(PDO $db, string $page, bool $sale, array $sellers): void
 {
     ?>
-    <section class="panel-card list-panel"><?php panelTitle($sale ? 'Ventas registradas' : 'Compras recibidas', 'Operaciones confirmadas');
+    <section class="list-panel"><?php panelTitle($sale ? 'Ventas registradas' : 'Compras recibidas', 'Operaciones confirmadas');
     $filters=searchForm($page,$sale?'Buscar cliente…':'Buscar proveedor…',[],$sellers);
     $data=paginated($db,$page,$filters);
     $items=$data['items'];
@@ -323,9 +323,9 @@ function operationsPage(PDO $db, string $page): void
     $saleTax=$sale?(rows($db,'SELECT T.porcentaje FROM dbo.RP21_CONFIG_FISCAL C JOIN dbo.RP20_TARIFAS_IVA T ON T.id_tarifa=C.tarifa_venta AND T.activo=1 WHERE C.id=1')[0]['porcentaje']??null):null;
     if($sale&&$saleTax===null)throw new InvalidArgumentException('No hay una tarifa de IVA disponible para ventas. Contacte al administrador.');
     ?>
+    <section class="panel-card operations-layout operations-entry-layout">
     <div class="info-strip"><span><?= $sale ? '↗' : '↙' ?></span><p><?= $sale ? 'Al confirmar la venta se descuentan las existencias. El precio se toma del catálogo.' : 'Al confirmar la recepción se suman las unidades al inventario.' ?> Seleccione el repuesto y la cantidad.</p></div>
-    <div class="split-layout operations-layout operations-entry-layout">
-    <section class="panel-card form-panel"><?php panelTitle($sale ? 'Nueva venta' : 'Registrar compra', 'Todos los montos están en colones costarricenses (CRC).');
+    <section class="form-panel"><?php panelTitle($sale ? 'Nueva venta' : 'Registrar compra', 'Todos los montos están en colones costarricenses (CRC).');
     if (!$people || ($sale && (!$parts || !$sellers))): ?><div class="notification is-warning is-light">Para continuar necesita <?= $sale ? 'un cliente, un repuesto y un vendedor activo' : 'un proveedor con repuestos habilitados' ?>. Complete los registros que faltan.</div><?php endif;
     startForm($page, $sale ? 'sale' : 'purchase');
     if ($sale) lookupField('Cliente','id_cliente','clientes',$people,$operation,$selectedPerson);
@@ -360,7 +360,7 @@ function operationsPage(PDO $db, string $page): void
     <div class="total-preview"><span>Total estimado</span><strong id="total-preview">₡ 0.00</strong><small>Revise la cantidad y el precio antes de confirmar.</small></div>
     <div class="fiscal-preview help mb-4" aria-live="polite"><p data-tax-note><?= $sale?'Los precios incluyen IVA ('.e($saleTax).'%). No se suma otra vez al total.':'Desglose de IVA no registrado.' ?></p><p data-tax-breakdown <?= $sale?'':'hidden' ?>>Monto antes del IVA: <strong data-tax-base>₡ 0.00</strong> · IVA incluido: <strong data-tax-amount>₡ 0.00</strong></p><p>Desglose estimado; el detalle confirmado se guarda al registrar la operación.</p></div>
     <button class="button is-primary is-fullwidth" data-cart-submit <?= !$people || !$parts || ($sale && !$sellers) ? 'disabled' : '' ?>><?= $sale ? 'Confirmar venta' : 'Confirmar recepción' ?></button></div>
-    <p class="help mt-3">Una vez confirmada, la operación no se puede editar ni anular.</p></form></section><?php operationsList($db,$page,$sale,$sellers); ?></div>
+    <p class="help mt-3">Una vez confirmada, la operación no se puede editar ni anular.</p></form></section><?php operationsList($db,$page,$sale,$sellers); ?></section>
     <?php
 }
 
