@@ -43,7 +43,7 @@ class FixtureDatabase extends PDO
 $_SESSION = ['csrf'=>'token-de-prueba'];
 $count = 0;
 foreach ([true, false] as $empty) {
-    foreach (['inicio','repuestos','clientes','proveedores','compras','ventas','inventario','reportes'] as $page) {
+    foreach (['inicio','repuestos','clientes','proveedores','compras','ventas','inventario','reportes','respaldos'] as $page) {
         $_GET = ['edit'=>$empty?'0':'1', 'detail'=>'1', 'q'=>'Filtro'];
         ob_start();
         renderPage(new FixtureDatabase($empty), $page);
@@ -54,6 +54,21 @@ foreach ([true, false] as $empty) {
         if ($page==='repuestos' && str_contains($html,'part_detail=')) throw new RuntimeException('Repuestos no debe incluir la consulta de proveedores.');
         if (preg_match('/prototipo|académico|entorno local|SQL Server|PHP|HTMX|Bulma|triggers|transaccional/iu', strip_tags($html))) {
             throw new RuntimeException('La pantalla contiene etiquetas técnicas: ' . $page);
+        }
+        if ($page === 'inicio' && (str_contains($html, 'Respaldo de la información') || !str_contains($html, 'class="button is-primary home-sale-cta"'))) {
+            throw new RuntimeException('Inicio debe omitir respaldos y destacar Nueva venta.');
+        }
+        if ($page === 'respaldos' && (!str_contains($html, 'Respaldo de la información') || !str_contains($html, 'action="index.php?page=respaldos"'))) {
+            throw new RuntimeException('La pantalla de respaldos o su formulario no se renderizaron.');
+        }
+        if (in_array($page, ['ventas','compras'], true)) {
+            $containerPosition=strpos($html, 'class="panel-card operations-layout operations-entry-layout"');
+            $infoPosition=strpos($html, 'class="info-strip"');
+            $formPosition=strpos($html, 'class="form-panel"');
+            $listPosition=strpos($html, 'class="list-panel"');
+            if ($containerPosition===false || $infoPosition===false || $formPosition===false || $listPosition===false || !($containerPosition<$infoPosition && $infoPosition<$formPosition && $formPosition<$listPosition)) {
+                throw new RuntimeException('Ventas y compras deben agrupar la ayuda, el formulario y el listado en una sola tarjeta.');
+            }
         }
         echo 'OK: ' . $page . ($empty ? ' vacío' : ' con registros') . PHP_EOL;
         $count++;

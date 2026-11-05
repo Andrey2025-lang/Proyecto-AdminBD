@@ -12,7 +12,8 @@ require __DIR__ . '/src/HaciendaEndpoint.php';
 
 $_SESSION['csrf'] ??= bin2hex(random_bytes(32));
 $pages = ['inicio' => 'Resumen general', 'repuestos' => 'Repuestos', 'clientes' => 'Clientes',
-    'proveedores' => 'Proveedores', 'compras' => 'Compras', 'ventas' => 'Ventas', 'inventario' => 'Inventario e historial','reportes'=>'Reportes'];
+    'proveedores' => 'Proveedores', 'compras' => 'Compras', 'ventas' => 'Ventas', 'inventario' => 'Inventario e historial',
+    'reportes'=>'Reportes', 'respaldos'=>'Respaldo de la información'];
 $page = is_string($_GET['page'] ?? null) ? $_GET['page'] : 'inicio';
 if (!isset($pages[$page])) $page = 'inicio';
 $notice = $_SESSION['notice'] ?? null;
@@ -203,7 +204,7 @@ if ($partial) { echo $content; exit; }
 <button id="sidebar-toggle" class="sidebar-toggle sidebar-pin" type="button" aria-label="Fijar menú abierto" aria-controls="sidebar" aria-expanded="false" aria-pressed="false"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg><span>Fijar menú</span></button>
 <button class="sidebar-close" type="button" aria-label="Cerrar menú">×</button>
 <p class="menu-caption">ESPACIO DE TRABAJO</p><nav aria-label="Menú principal">
-<?php $icons = ['inicio'=>'◫','repuestos'=>'▦','clientes'=>'♙','proveedores'=>'▤','compras'=>'↙','ventas'=>'↗','inventario'=>'≡']; foreach (array_intersect_key($pages,$icons) as $key => $label): ?>
+<?php $icons = ['inicio'=>'◫','repuestos'=>'▦','clientes'=>'♙','proveedores'=>'▤','compras'=>'↙','ventas'=>'↗','inventario'=>'≡','respaldos'=>'◈']; foreach (array_intersect_key($pages,$icons) as $key => $label): ?>
 <a class="nav-link <?= $page === $key ? 'active' : '' ?>" href="index.php?page=<?= $key ?>" hx-get="index.php?page=<?= $key ?>" hx-target="#content" hx-push-url="true" data-page="<?= $key ?>" title="<?= e($label) ?>" aria-label="<?= e($label) ?>"><span aria-hidden="true"><?= $icons[$key] ?></span><span class="nav-label"><?= $key === 'inicio' ? 'Inicio' : e($label) ?></span></a>
 <?php endforeach ?></nav><div class="sidebar-footer">Gestión de repuestos<small>Compras, ventas e inventario<br>en un solo lugar.</small></div></aside>
 <button class="sidebar-backdrop" type="button" aria-label="Cerrar menú" hidden></button>

@@ -49,6 +49,7 @@
         }
         function render() {
             table.replaceChildren();
+            editor.querySelector('.cart-table-wrap').classList.toggle('is-empty',!lines.length);
             if(!lines.length) {
                 const row=table.insertRow(); const cell=row.insertCell(); cell.colSpan=4; cell.className='empty-state';cell.textContent='Agregue los repuestos de esta operación.';
             }

@@ -43,7 +43,7 @@ La migración **010** incorpora IVA incluido: los precios finales no aumentan; s
 
 En **Reportes** se puede descargar Excel real (`.xlsx`), CSV o abrir un documento imprimible para guardar como PDF con el navegador. Hay filtros por fecha y búsqueda; cada listado también permite exportar sus filtros actuales. No se exporta únicamente la página visible.
 
-El menú muestra únicamente Inicio, Repuestos, Clientes, Proveedores, Compras, Ventas e Inventario e historial. En escritorio se abre al pasar el mouse y el contenido ajusta su ancho; al salir se contrae. El botón Menú fija su apertura y otro clic devuelve el modo automático. En móvil se abre al tocarlo. Cambiar de módulo devuelve la pantalla arriba. Editar abre un formulario superpuesto y conserva filtros/página. La paginación mantiene controles Anterior/Página/Siguiente estables.
+El menú muestra Inicio, Repuestos, Clientes, Proveedores, Compras, Ventas, Inventario e historial y Respaldo de la información. En escritorio se abre al pasar el mouse y el contenido ajusta su ancho; al salir se contrae. El botón Menú fija su apertura y otro clic devuelve el modo automático. En móvil se abre al tocarlo. Cambiar de módulo devuelve la pantalla arriba. Editar abre un formulario superpuesto y conserva filtros/página. La paginación mantiene controles Anterior/Página/Siguiente estables.
 
 Los formularios usan un único buscador con sugerencias para clientes, proveedores y repuestos. Al enfocarlo se pueden recorrer los registros con «Mostrar más»; la búsqueda se filtra desde dos caracteres, con 20 coincidencias por solicitud. La selección admite teclado y ratón y no utiliza un desplegable adicional. En **Compras**, el buscador muestra únicamente los repuestos habilitados para el proveedor elegido; el catálogo se administra desde Proveedores → **Repuestos** y el servidor vuelve a comprobarlo al guardar.
 
@@ -55,7 +55,7 @@ Las instrucciones completas, pruebas y limitaciones están en [taller_repuestos/
 
 ## Base de datos y seguridad
 
-**Inicio → Crear respaldo** permite solicitar una copia manual verificada e independiente (`COPY_ONLY`), sin eliminar las anteriores. Requiere la migración **009**. Historial, intervalos y exclusión de ejecuciones simultáneas se manejan en la base. Se mantiene la tarea de Windows cada 30 minutos; no hay botón para restaurar ni borrar copias.
+**Menú lateral → Respaldo de la información → Crear respaldo** permite solicitar una copia manual verificada e independiente (`COPY_ONLY`), sin eliminar las anteriores. Requiere la migración **009**. Historial, intervalos y exclusión de ejecuciones simultáneas se manejan en la base. Se mantiene la tarea de Windows cada 30 minutos; no hay botón para restaurar ni borrar copias.
 
 Git guarda el código y los scripts, **no la base activa ni sus registros actuales**. Las compras y ventas realizadas localmente no se publican automáticamente. Para entregar una copia exacta de la base, generar y compartir un respaldo `.bak` por separado.
 

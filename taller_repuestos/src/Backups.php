@@ -10,7 +10,7 @@ function backupPanel(PDO $db): void
     <section class="panel-card mt-5" aria-label="Respaldos">
     <?php panelTitle('Respaldo de la información','Guarda una copia adicional sin modificar compras, ventas ni inventario.'); ?>
     <p class="help mb-4">Copia completa automática cada <?= (int)$config['intervalo_completo_horas'] ?> horas y copia de cambios cada <?= (int)$config['intervalo_registro_minutos'] ?> minutos. La tarea de Windows requiere la sesión abierta y el equipo encendido. Las copias anteriores no se eliminan.</p>
-    <form method="post" action="index.php?page=inicio" data-backup-form>
+    <form method="post" action="index.php?page=respaldos" data-backup-form>
     <?php csrf(); ?><input type="hidden" name="action" value="backup">
     <button class="button is-primary" type="submit">Crear respaldo</button>
     <p class="help mt-2" role="status">Espere al menos <?= (int)$config['intervalo_manual_minutos'] ?> minutos entre solicitudes manuales. Crear una copia no restaura ni deshace operaciones.</p>

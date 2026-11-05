@@ -175,8 +175,15 @@ function renderPage(PDO $db, string $page): void
         'compras', 'ventas' => operationsPage($db, $page),
         'inventario' => inventoryPage($db),
         'reportes' => reportsPage($db),
+        'respaldos' => backupsPage($db),
         default => dashboard($db),
     };
+}
+
+function backupsPage(PDO $db): void
+{
+    require_once __DIR__.'/Backups.php';
+    backupPanel($db);
 }
 
 function dashboard(PDO $db): void
@@ -188,14 +195,12 @@ function dashboard(PDO $db): void
     $low = rows($db, "SELECT TOP (6) nombre, stock_actual, stock_minimo FROM RP03_REPUESTOS WHERE estado='ACTIVO' AND stock_actual <= stock_minimo ORDER BY stock_actual, nombre");
     $recent = rows($db, 'SELECT TOP (6) V.id_venta,V.fecha,V.total,C.nombre FROM RP07_VENTAS V JOIN RP05_CLIENTES C ON C.id_cliente=V.id_cliente ORDER BY V.fecha DESC,V.id_venta DESC');
     dashboardView($stats, $low, $recent);
-    require_once __DIR__.'/Backups.php';
-    backupPanel($db);
 }
 
 function dashboardView(array $stats, array $low, array $recent): void
 {
     ?>
-    <section class="welcome"><div><p class="eyebrow">TODO BAJO CONTROL</p><h2>Tu taller, en movimiento.</h2><p>Consulta tus existencias y registra cada entrada y salida.</p><a class="button is-primary" href="index.php?page=ventas" hx-get="index.php?page=ventas" hx-target="#content" hx-push-url="true">Registrar una venta <span aria-hidden="true">↗</span></a></div><div class="welcome-art" aria-hidden="true"><div class="art-box">R<span>+</span></div><span class="art-label">INVENTARIO CONECTADO</span></div></section>
+    <section class="welcome"><div><p class="eyebrow">TODO BAJO CONTROL</p><h2>Tu taller, en movimiento.</h2><p>Consulta tus existencias y registra cada entrada y salida.</p><a class="button is-primary home-sale-cta" href="index.php?page=ventas" hx-get="index.php?page=ventas" hx-target="#content" hx-push-url="true"><span class="home-sale-cta-icon" aria-hidden="true">+</span>Nueva venta<span aria-hidden="true">↗</span></a></div><div class="welcome-art" aria-hidden="true"><div class="art-box">R<span>+</span></div><span class="art-label">INVENTARIO CONECTADO</span></div></section>
     <div class="stats-grid">
     <?php foreach ([['Repuestos activos', $stats['partes'], 'Referencias en el catálogo', '▦'], ['Ventas de hoy', money($stats['vendido']), 'Importe en moneda del negocio', '↗'], ['Existencias bajas', $stats['bajos'], 'En el mínimo o por debajo', '↘'], ['Clientes', $stats['clientes'], 'Clientes registrados', '♙']] as [$title,$number,$caption,$icon]): ?>
         <article class="stat-card"><div><span><?= e($title) ?></span><span class="stat-icon" aria-hidden="true"><?= $icon ?></span></div><strong><?= e($number) ?></strong><small><?= e($caption) ?></small></article>
@@ -218,27 +223,27 @@ function partsPage(PDO $db): void
     if($edit && !$part)throw new InvalidArgumentException('El repuesto que desea editar ya no existe.');
     $cats = rows($db, 'SELECT id_categoria,nombre FROM RP01_CATEGORIAS ORDER BY nombre');
     ?>
-    <div class="split-layout"><section class="panel-card list-panel"><?php panelTitle('Catálogo de repuestos', 'Precios y existencias del catálogo');
+    <div class="management-layout parts-layout"><section class="panel-card form-panel"><?php panelTitle($part ? 'Editar repuesto' : 'Nuevo repuesto', 'Las nuevas referencias comienzan con stock cero.');
+    startForm('repuestos', 'part'); ?><input type="hidden" name="id" value="<?= (int)($part['id_repuesto'] ?? 0) ?>">
+    <?php echo '<div class="management-fields">'; input('Código de barras (único)', 'codigo_barras', $part['codigo_barras'] ?? '', 'text', 'required maxlength="20"');
+    input('Nombre del repuesto', 'nombre', $part['nombre'] ?? '', 'text', 'required maxlength="150"');
+    options('Categoría', 'id_categoria', $cats, 'id_categoria', 'nombre', $part['id_categoria'] ?? '');
+    input('Precio de compra', 'precio_compra', $part['precio_compra'] ?? '0.00', 'number', 'min="0" max="99999999.99" step="0.01" required');
+    input('Precio de venta', 'precio_venta', $part['precio_venta'] ?? '0.00', 'number', 'min="0" max="99999999.99" step="0.01" required');
+    input('Existencias mínimas', 'stock_minimo', $part['stock_minimo'] ?? 1, 'number', 'min="0" max="2147483647" step="1" required');
+    options('Estado', 'estado', [['id'=>'ACTIVO','label'=>'Activo'],['id'=>'INACTIVO','label'=>'Inactivo']], 'id', 'label', $part['estado'] ?? 'ACTIVO'); echo '</div>'; ?>
+    <p class="help mb-2">El código es único y admite hasta 20 caracteres alfanuméricos.</p>
+    <p class="help mb-4">El precio de venta es final e incluye IVA. En compras, confirme el impuesto indicado en el comprobante del proveedor.</p>
+    <button class="button is-primary">Guardar repuesto</button>
+    <?php if ($part): ?><a class="button is-text mt-2" href="index.php?page=repuestos" hx-get="index.php?page=repuestos" hx-target="#content" hx-push-url="true">Cancelar edición</a><?php endif ?></form></section>
+    <section class="panel-card list-panel"><?php panelTitle('Catálogo de repuestos', 'Precios y existencias del catálogo');
     $filters = searchForm('repuestos', 'Nombre, código o categoría…',$cats);
     $data=paginated($db,'repuestos',$filters); $items=$data['items']; foreach($items as &$row)$row['estado']=statusLabel($row['estado']);unset($row); exportLinks('repuestos','repuestos'); ?>
     <div class="table-container"><table class="table is-fullwidth"><thead><tr><th>Repuesto</th><th>Compra / venta</th><th>Existencias</th><th>Estado</th><th></th></tr></thead><tbody>
     <?php if (!$items) emptyRow(5); foreach ($items as $r): ?>
     <tr><td><strong><?= e($r['nombre']) ?></strong><small class="cell-subtitle"><?= e($r['codigo_barras']) ?> · <?= e($r['categoria']) ?></small></td><td><?= money($r['precio_compra']) ?><small class="cell-subtitle amount"><?= money($r['precio_venta']) ?></small></td><td><span class="tag <?= $r['stock_actual'] <= $r['stock_minimo'] ? 'is-warning is-light' : 'is-success is-light' ?>"><?= (int)$r['stock_actual'] ?> uds.</span></td><td><span class="tag is-light"><?= e($r['estado']) ?></span></td><td><?= editLink('repuestos', (int)$r['id_repuesto']) ?></td></tr>
     <?php endforeach ?></tbody></table></div><?php pagination('repuestos',$data); ?></section>
-    <aside><section class="panel-card form-panel"><?php panelTitle($part ? 'Editar repuesto' : 'Nuevo repuesto', 'Las nuevas referencias comienzan con stock cero.');
-    startForm('repuestos', 'part'); ?><input type="hidden" name="id" value="<?= (int)($part['id_repuesto'] ?? 0) ?>">
-    <?php input('Código de barras (único)', 'codigo_barras', $part['codigo_barras'] ?? '', 'text', 'required maxlength="20"'); ?>
-    <p class="help mb-4">No puede repetirse en otro repuesto. Admite hasta 20 caracteres, incluidos códigos alfanuméricos.</p>
-    <?php
-    input('Nombre del repuesto', 'nombre', $part['nombre'] ?? '', 'text', 'required maxlength="150"');
-    options('Categoría', 'id_categoria', $cats, 'id_categoria', 'nombre', $part['id_categoria'] ?? ''); ?>
-    <div class="form-grid"><?php input('Precio de compra', 'precio_compra', $part['precio_compra'] ?? '0.00', 'number', 'min="0" max="99999999.99" step="0.01" required'); input('Precio de venta', 'precio_venta', $part['precio_venta'] ?? '0.00', 'number', 'min="0" max="99999999.99" step="0.01" required'); ?></div>
-    <p class="help mb-4">El precio de venta es el precio final con IVA incluido. En compras, confirme el tratamiento del impuesto según el comprobante del proveedor.</p>
-    <?php input('Existencias mínimas', 'stock_minimo', $part['stock_minimo'] ?? 1, 'number', 'min="0" max="2147483647" step="1" required');
-    options('Estado', 'estado', [['id'=>'ACTIVO','label'=>'Activo'],['id'=>'INACTIVO','label'=>'Inactivo']], 'id', 'label', $part['estado'] ?? 'ACTIVO'); ?>
-    <button class="button is-primary is-fullwidth">Guardar repuesto</button>
-    <?php if ($part): ?><a class="button is-text is-fullwidth mt-2" href="index.php?page=repuestos" hx-get="index.php?page=repuestos" hx-target="#content" hx-push-url="true">Cancelar edición</a><?php endif ?></form></section>
-    <details class="panel-card category-panel"><summary>+ Registrar categoría</summary><?php startForm('repuestos','category'); input('Nombre de la categoría','nombre','','text','required maxlength="100"'); ?><button class="button is-light is-fullwidth">Guardar categoría</button></form></details></aside></div>
+    <details class="panel-card category-panel"><summary>+ Registrar categoría</summary><?php startForm('repuestos','category'); input('Nombre de la categoría','nombre','','text','required maxlength="100"'); ?><button class="button is-light is-fullwidth">Guardar categoría</button></form></details></div>
     <?php
 }
 
@@ -254,12 +259,7 @@ function contactsPage(PDO $db, string $page): void
     $item = $edit ? (rows($db, "SELECT * FROM $table WHERE $pk=?", [$edit])[0] ?? []) : [];
     if($edit && !$item)throw new InvalidArgumentException('El registro que desea editar ya no existe.');
     ?>
-    <div class="split-layout"><section class="panel-card list-panel"><?php panelTitle($client ? 'Directorio de clientes' : 'Directorio de proveedores');
-    $filters = searchForm($page, $client ? 'Buscar por nombre o cédula…' : 'Buscar por empresa o contacto…');
-    $data=paginated($db,$page,$filters); $items=$data['items']; ?>
-    <div class="table-container"><table class="table is-fullwidth"><thead><tr><th><?= $client ? 'Cliente / cédula' : 'Empresa / contacto' ?></th><th>Teléfono</th><th>Correo electrónico</th><th></th></tr></thead><tbody>
-    <?php if (!$items) emptyRow(4); foreach ($items as $r): ?><tr><td><strong><?= e($r[$name]) ?></strong><small class="cell-subtitle"><?= e($r[$other]) ?></small></td><td><?= e(phoneLabel($r['telefono'])) ?></td><td><?= e($r['email'] ?: '—') ?></td><td><?= editLink($page, (int)$r[$pk]) ?></td></tr><?php endforeach ?>
-    </tbody></table></div><?php pagination($page,$data); ?></section><section class="panel-card form-panel"><?php panelTitle($item ? 'Editar registro' : ($client ? 'Nuevo cliente' : 'Nuevo proveedor')); startForm($page, $client ? 'client' : 'supplier'); ?>
+    <div class="management-layout contacts-layout"><section class="panel-card form-panel"><?php panelTitle($item ? 'Editar registro' : ($client ? 'Nuevo cliente' : 'Nuevo proveedor')); startForm($page, $client ? 'client' : 'supplier'); ?>
     <input type="hidden" name="id" value="<?= (int)($item[$pk] ?? 0) ?>">
     <?php input($client ? 'Nombre completo' : 'Nombre de la empresa', $name, $item[$name] ?? '', 'text', 'required maxlength="' . ($client ? 100 : 150) . '"');
     input($client ? 'Cédula' : 'Persona de contacto', $other, $item[$other] ?? '', 'text', 'required maxlength="' . ($client ? 20 : 100) . '"' . ($client ? ' data-hacienda-identificacion' : ''));
@@ -282,8 +282,32 @@ function contactsPage(PDO $db, string $page): void
     <?php endif;
     input('Teléfono', 'telefono', phoneLabel($item['telefono'] ?? ''), 'tel', 'required maxlength="20" placeholder="8888-8888"');
     input('Correo electrónico' . ($client ? ' (opcional)' : ''), 'email', $item['email'] ?? '', 'email', 'maxlength="100" ' . ($client ? '' : 'required')); ?>
-    <button class="button is-primary is-fullwidth">Guardar <?= $client ? 'cliente' : 'proveedor' ?></button>
-    <?php if ($item): ?><a class="button is-text is-fullwidth mt-2" href="index.php?page=<?= $page ?>" hx-get="index.php?page=<?= $page ?>" hx-target="#content" hx-push-url="true">Cancelar edición</a><?php endif ?></form><?php if(!$client&&$item): ?><button type="button" class="button is-light is-fullwidth mt-4" data-supplier-catalog="<?= (int)$item[$pk] ?>">Repuestos que ofrece</button><?php endif ?></section></div>
+    <button class="button is-primary">Guardar <?= $client ? 'cliente' : 'proveedor' ?></button>
+    <?php if ($item): ?><a class="button is-text mt-2" href="index.php?page=<?= $page ?>" hx-get="index.php?page=<?= $page ?>" hx-target="#content" hx-push-url="true">Cancelar edición</a><?php endif ?></form><?php if(!$client&&$item): ?><button type="button" class="button is-light mt-4" data-supplier-catalog="<?= (int)$item[$pk] ?>">Repuestos que ofrece</button><?php endif ?></section>
+    <section class="panel-card list-panel"><?php panelTitle($client ? 'Directorio de clientes' : 'Directorio de proveedores');
+    $filters = searchForm($page, $client ? 'Buscar por nombre o cédula…' : 'Buscar por empresa o contacto…');
+    $data=paginated($db,$page,$filters); $items=$data['items']; ?>
+    <div class="table-container"><table class="table is-fullwidth"><thead><tr><th><?= $client ? 'Cliente / cédula' : 'Empresa / contacto' ?></th><th>Teléfono</th><th>Correo electrónico</th><th></th></tr></thead><tbody>
+    <?php if (!$items) emptyRow(4); foreach ($items as $r): ?><tr><td><strong><?= e($r[$name]) ?></strong><small class="cell-subtitle"><?= e($r[$other]) ?></small></td><td><?= e(phoneLabel($r['telefono'])) ?></td><td><?= e($r['email'] ?: '—') ?></td><td><?= editLink($page, (int)$r[$pk]) ?></td></tr><?php endforeach ?>
+    </tbody></table></div><?php pagination($page,$data); ?></section></div>
+    <?php
+}
+
+function operationsList(PDO $db, string $page, bool $sale, array $sellers): void
+{
+    ?>
+    <section class="list-panel"><?php panelTitle($sale ? 'Ventas registradas' : 'Compras recibidas', 'Operaciones confirmadas');
+    $filters=searchForm($page,$sale?'Buscar cliente…':'Buscar proveedor…',[],$sellers);
+    $data=paginated($db,$page,$filters);
+    $items=$data['items'];
+    foreach($items as &$row)$row['estado']=statusLabel($row['estado']);
+    unset($row);
+    exportLinks($page,$page); ?>
+    <p class="result-summary">Monto total de los <?= number_format($data['total']) ?> resultados: <strong><?= money($data['amount']) ?></strong></p>
+    <div class="table-container"><table class="table is-fullwidth"><thead><tr><th>Referencia</th><th><?= $sale ? 'Cliente / vendedor' : 'Proveedor' ?></th><th>Total</th><th>Estado</th><th></th></tr></thead><tbody>
+    <?php if (!$items) emptyRow(5); foreach ($items as $r): ?><tr><td><strong>#<?= (int)$r['id'] ?></strong><small class="cell-subtitle"><?= dateLabel($r['fecha']) ?></small></td><td><?= e($r['persona']) ?><?php if ($sale): ?><small class="cell-subtitle"><?= e($r['vendedor']) ?></small><?php endif ?></td><td class="amount"><?= money($r['total']) ?></td><td><span class="tag is-success is-light"><?= e($r['estado']) ?></span></td><td><button class="button is-small is-light" type="button" data-detail-kind="<?= $page ?>" data-detail-id="<?= (int)$r['id'] ?>">Ver detalle</button></td></tr><?php endforeach ?>
+    </tbody></table></div>
+    <?php pagination($page,$data); ?></section>
     <?php
 }
 
@@ -299,15 +323,9 @@ function operationsPage(PDO $db, string $page): void
     $saleTax=$sale?(rows($db,'SELECT T.porcentaje FROM dbo.RP21_CONFIG_FISCAL C JOIN dbo.RP20_TARIFAS_IVA T ON T.id_tarifa=C.tarifa_venta AND T.activo=1 WHERE C.id=1')[0]['porcentaje']??null):null;
     if($sale&&$saleTax===null)throw new InvalidArgumentException('No hay una tarifa de IVA disponible para ventas. Contacte al administrador.');
     ?>
+    <section class="panel-card operations-layout operations-entry-layout">
     <div class="info-strip"><span><?= $sale ? '↗' : '↙' ?></span><p><?= $sale ? 'Al confirmar la venta se descuentan las existencias. El precio se toma del catálogo.' : 'Al confirmar la recepción se suman las unidades al inventario.' ?> Seleccione el repuesto y la cantidad.</p></div>
-    <div class="split-layout operations-layout"><section class="panel-card list-panel"><?php panelTitle($sale ? 'Ventas registradas' : 'Compras recibidas', 'Operaciones confirmadas');
-    $filters=searchForm($page,$sale?'Buscar cliente…':'Buscar proveedor…',[],$sellers); $data=paginated($db,$page,$filters); $items=$data['items']; foreach($items as &$row)$row['estado']=statusLabel($row['estado']);unset($row); exportLinks($page,$page); ?>
-    <p class="result-summary">Monto total de los <?= number_format($data['total']) ?> resultados: <strong><?= money($data['amount']) ?></strong></p>
-    <div class="table-container"><table class="table is-fullwidth"><thead><tr><th>Referencia</th><th><?= $sale ? 'Cliente / vendedor' : 'Proveedor' ?></th><th>Total</th><th>Estado</th><th></th></tr></thead><tbody>
-    <?php if (!$items) emptyRow(5); foreach ($items as $r): ?><tr><td><strong>#<?= (int)$r['id'] ?></strong><small class="cell-subtitle"><?= dateLabel($r['fecha']) ?></small></td><td><?= e($r['persona']) ?><?php if ($sale): ?><small class="cell-subtitle"><?= e($r['vendedor']) ?></small><?php endif ?></td><td class="amount"><?= money($r['total']) ?></td><td><span class="tag is-success is-light"><?= e($r['estado']) ?></span></td><td><button class="button is-small is-light" type="button" data-detail-kind="<?= $page ?>" data-detail-id="<?= (int)$r['id'] ?>">Ver detalle</button></td></tr><?php endforeach ?>
-    </tbody></table></div>
-    <?php pagination($page,$data); ?></section>
-    <section class="panel-card form-panel"><?php panelTitle($sale ? 'Nueva venta' : 'Registrar compra', 'Todos los montos están en colones costarricenses (CRC).');
+    <section class="form-panel"><?php panelTitle($sale ? 'Nueva venta' : 'Registrar compra', 'Todos los montos están en colones costarricenses (CRC).');
     if (!$people || ($sale && (!$parts || !$sellers))): ?><div class="notification is-warning is-light">Para continuar necesita <?= $sale ? 'un cliente, un repuesto y un vendedor activo' : 'un proveedor con repuestos habilitados' ?>. Complete los registros que faltan.</div><?php endif;
     startForm($page, $sale ? 'sale' : 'purchase');
     if ($sale) lookupField('Cliente','id_cliente','clientes',$people,$operation,$selectedPerson);
@@ -324,6 +342,7 @@ function operationsPage(PDO $db, string $page): void
     <?php lookupField('Repuesto','id_repuesto',$sale?'repuestos':'repuestos_compra',$parts,$operation,0,false); ?>
     <?php if(!$sale): ?><p class="help mb-4">Busque el repuesto y elija quién lo ofrece. Los siguientes repuestos se buscarán en el catálogo del mismo proveedor. El catálogo no garantiza disponibilidad actual.</p><div data-part-suppliers aria-live="polite" class="mb-3"></div><div class="notification is-light mb-3" data-selected-supplier <?= $selectedPerson?'':'hidden' ?>><strong>Proveedor: </strong><span data-supplier-name><?= e($supplierLabel) ?></span><button type="button" class="button is-small is-light ml-2" data-change-supplier>Cambiar proveedor</button><p class="help">Una compra corresponde a un proveedor. Para cambiarlo, vacíe primero los repuestos agregados.</p></div><?php endif ?>
     <div id="stock-hint" class="help mb-4">Seleccione una referencia para consultar sus existencias.</div>
+    <div class="cart-inputs">
     <?php input('Cantidad', 'cantidad', 1, 'number', 'min="1" max="2147483647" step="1"');
     if (!$sale) {
         input('Precio unitario de compra (IVA incluido)', 'precio_unitario', '0.00', 'number', 'min="0" max="99999999.99" step="0.01"');
@@ -332,15 +351,16 @@ function operationsPage(PDO $db, string $page): void
         $defaultTax=rows($db,'SELECT tarifa_venta FROM dbo.RP21_CONFIG_FISCAL WHERE id=1')[0]['tarifa_venta']??0;
         if (!$choices || !isset($choices[$defaultTax])) throw new InvalidArgumentException('No hay una tarifa de IVA configurada y activa. Contacte al administrador.');
         filterSelect('tarifa_compra','IVA incluido en el precio de compra',$choices,selectedPostId('purchase','tarifa_compra') ?: $defaultTax);
-        echo '<p class="help mb-4">Todos los precios de compra incluyen el IVA seleccionado. No se agrega al total nuevamente. Use la tarifa indicada en el comprobante; este formulario admite una tarifa por compra.</p>';
     } ?>
     <button type="button" class="button is-light is-fullwidth" data-cart-add>+ Agregar a la operación</button>
+    </div>
+    <?php if(!$sale): ?><p class="help cart-tax-help">Todos los precios de compra incluyen el IVA seleccionado. No se agrega al total nuevamente. Use la tarifa indicada en el comprobante; este formulario admite una tarifa por compra.</p><?php endif ?>
     <div class="cart-alert notification is-warning is-light" role="alert" hidden></div><div class="cart-table-wrap"><table class="table is-fullwidth cart-table"><thead><tr><th>Repuesto</th><th>Cant.</th><th>Precio</th><th></th></tr></thead><tbody class="cart-items"></tbody></table></div>
     <?php if(!$sale): ?><button type="button" class="button is-small is-light" data-cart-clear>Vaciar repuestos</button><?php endif ?>
     <div class="total-preview"><span>Total estimado</span><strong id="total-preview">₡ 0.00</strong><small>Revise la cantidad y el precio antes de confirmar.</small></div>
     <div class="fiscal-preview help mb-4" aria-live="polite"><p data-tax-note><?= $sale?'Los precios incluyen IVA ('.e($saleTax).'%). No se suma otra vez al total.':'Desglose de IVA no registrado.' ?></p><p data-tax-breakdown <?= $sale?'':'hidden' ?>>Monto antes del IVA: <strong data-tax-base>₡ 0.00</strong> · IVA incluido: <strong data-tax-amount>₡ 0.00</strong></p><p>Desglose estimado; el detalle confirmado se guarda al registrar la operación.</p></div>
     <button class="button is-primary is-fullwidth" data-cart-submit <?= !$people || !$parts || ($sale && !$sellers) ? 'disabled' : '' ?>><?= $sale ? 'Confirmar venta' : 'Confirmar recepción' ?></button></div>
-    <p class="help mt-3">Una vez confirmada, la operación no se puede editar ni anular.</p></form></section></div>
+    <p class="help mt-3">Una vez confirmada, la operación no se puede editar ni anular.</p></form></section><?php operationsList($db,$page,$sale,$sellers); ?></section>
     <?php
 }
 

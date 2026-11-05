@@ -8,8 +8,8 @@
     const toggle = document.querySelector('#sidebar-toggle');
     const mobileToggle = document.querySelector('#sidebar-mobile-toggle');
     const backdrop = document.querySelector('.sidebar-backdrop');
-    let pinned=false;
-    try {pinned=localStorage.getItem('repuesto.sidebar.pinned')==='true';} catch (_) {}
+    let pinned=true;
+    try {const saved=localStorage.getItem('repuesto.sidebar.pinned.v2');if(saved!==null)pinned=saved==='true';} catch (_) {}
     let hoverTimer,openTimer;
     function expandSidebar(event) {
         if(mobile.matches)return;
@@ -61,7 +61,7 @@
         if (mobile.matches) document.body.classList.toggle('sidebar-open');
         else {
             pinned=!pinned;
-            try {localStorage.setItem('repuesto.sidebar.pinned',String(pinned));} catch (_) {}
+            try {localStorage.setItem('repuesto.sidebar.pinned.v2',String(pinned));} catch (_) {}
             if(!pinned)document.body.classList.toggle('sidebar-peek',!!sidebar?.matches(':hover'));
         }
         syncSidebar();
