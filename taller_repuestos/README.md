@@ -184,41 +184,45 @@ Abrir **Reportes**, seleccionar el tipo de informe, sus fechas y el formato. Tam
 - Conteo, totales y filas se leen en una transacción SERIALIZABLE para evitar discrepancias por cambios simultáneos. Puede bloquear brevemente operaciones concurrentes mientras se construye el archivo temporal; la transacción termina **antes** de enviarlo al navegador. El archivo se genera por filas, sin cargar toda la exportación en memoria, y se elimina al cerrar la descarga.
 - Son documentos informativos: no facturas ni certificaciones contables con firma digital. No se implementó inicio de sesión; no exponer la aplicación a Internet.
 
+## Data Warehouse
+
+Las migraciones `sql/011_data_warehouse.sql` y `sql/012_respaldos_recuperacion.sql` son incrementales; no recrean la base ni cambian las operaciones comerciales. El esquema `dw` está separado lógicamente dentro de `TallerRepuestosDB`, pero no es una base de datos física independiente. Implementa dimensiones de tiempo, cliente, repuesto y vendedor, y `FACT_VENTAS` con una fila por detalle de venta completada. Incluye claves sustitutas, claves foráneas, una clave natural única para cada detalle de origen e índices para análisis.
+
+La dimensión tiempo es un calendario continuo desde la menor hasta la mayor fecha de venta encontrada (y conserva cualquier extensión que ya tenga). Incluye fechas sin ventas y atributos de año, trimestre, número y nombre de mes, día del año, día de semana, fin de semana y semana ISO. Cuando aparezcan ventas en fechas anteriores o posteriores, la siguiente carga amplía el rango sin duplicar, borrar ni reemplazar fechas existentes; no genera un calendario infinito.
+
+`dw.sp_CargarDataWarehouse` vuelve a leer las ventas actualmente `COMPLETADA` e idempotente por ID de venta y detalle. Inserta hechos faltantes, actualiza sus medidas si cambió el origen y aplica **SCD tipo 1** a los atributos descriptivos de cliente, repuesto y vendedor: cada cambio sustituye el valor anterior y no conserva las versiones históricas. La tabla de hechos conserva las relaciones mediante las claves sustitutas de dimensión, pero al consultar un hecho antiguo se verán los atributos descriptivos actuales. Esta es una limitación conocida de la primera versión. No elimina hechos si un registro desaparece de la fuente o deja de estar completado. Usa una transacción y un bloqueo de aplicación para impedir cargas simultáneas; los errores revierten la carga y quedan en `dw.ETL_HISTORIAL`. Antes de cargar, valida referencias y consistencia de totales e IVA. El historial comercial sin desglose fiscal permanece sin IVA inventado.
+
+La carga no copia compras ni movimientos de inventario y requiere que las referencias de las ventas estén presentes en sus tablas maestras. `sql/consultas_dw.sql` contiene consultas analíticas y `sql/verificar_dw.sql` permite inspeccionar objetos, conciliación, duplicados, relaciones y ejecuciones. La migración y el ETL no se ejecutaron durante la preparación de esta guía; su instalación y funcionamiento no se consideran verificados hasta aplicar el SQL en un ambiente autorizado y ejecutar el ETL allí.
+
 ## Respaldos automáticos
 
 ### Respaldo manual desde Inicio
 
-Aplicar `sql/009_respaldos_manuales.sql` después de 005. En **Menú lateral → Respaldo de la información → Crear respaldo** se solicita una copia completa `COPY_ONLY`, con nombre único, CHECKSUM, compresión y VERIFYONLY. Nunca reemplaza la base ni elimina copias anteriores. No ofrece restauración desde la página.
+Aplicar `sql/005_respaldos.sql` y después `sql/009_respaldos_manuales.sql` y `sql/012_respaldos_recuperacion.sql`. En **Menú lateral → Respaldo de la información → Crear respaldo** se solicita un completo `COPY_ONLY`, con nombre único, CHECKSUM, compresión y VERIFYONLY. Nunca reemplaza la base ni elimina copias anteriores. No ofrece restauración desde la página. La cuenta de conexión necesita permisos de respaldo y verificación; no se conceden permisos automáticamente ni se aceptan rutas del navegador.
 
-El historial, los resultados y los intervalos se consultan de SQL Server: `RP16_RESPALDOS` y `RP17_CONFIG_RESPALDOS`. Valores iniciales: completo automático cada 24 horas, registro cada 30 minutos y cinco minutos entre solicitudes manuales. El bloqueo `Repuesto.Respaldos` es compartido por las ejecuciones manuales y automáticas. Un intento manual fallido registrado también consume el intervalo para evitar repeticiones continuas. Una solicitud interrumpida debe revisarse antes de repetirla; un registro en proceso no prueba por sí solo que la tarea siga activa.
+`sql/012_respaldos_recuperacion.sql` reemplaza el procedimiento sin modificar la opción de recuperación de la base. En `SIMPLE`, una ejecución automática crea un respaldo completo no `COPY_ONLY` únicamente si no hay uno verificado dentro del intervalo; las siguientes solicitudes quedan registradas como `OMITIDO`, sin crear otro archivo ni intentar `BACKUP LOG`. En `FULL` o `BULK_LOGGED`, crea un completo automático normal cuando no existe uno verificado dentro de `intervalo_completo_horas`; entre completos, genera logs respetando `intervalo_registro_minutos`. Antes de un log exige un completo normal posterior al cambio observado del modelo, confirma que ese archivo todavía aparece en `msdb` y supera `VERIFYONLY`, revisa el orden de LSN y verifica los archivos de los logs previos registrados. Los completos periódicos normales **no reinician ni reemplazan la base de la cadena**. Los logs externos o no registrados se consideran una inconsistencia y detienen el proceso con un error en el historial; también se detiene ante medios múltiples, que esta rutina no puede verificar individualmente. Los respaldos manuales siguen siendo completos `COPY_ONLY` y no se usan como base ni sustituto de los completos automáticos periódicos. La cuenta SQL necesita lectura del historial de `msdb` y permisos para respaldar y verificar. `VERIFYONLY` valida los archivos, pero no demuestra por sí solo que la restauración funcione.
 
-La tarea de Windows existente sigue ejecutándose cada 30 minutos; el procedimiento decide si corresponde una copia. Cambiar el intervalo en la base no modifica la frecuencia de la tarea: un intervalo menor requiere ajustar también su disparador. `programado` es información de instalación, no una comprobación en vivo del Programador de tareas.
+Intervalos iniciales configurables: completo automático cada 24 horas, registro cada 30 minutos y cinco minutos entre solicitudes manuales. El bloqueo `Repuesto.Respaldos` excluye ejecuciones concurrentes. Si una ejecución se interrumpe, el siguiente intento marca los registros `EN_CURSO` anteriores como error; debe comprobarse el archivo antes de utilizarlo. Cambiar intervalos en SQL no cambia la frecuencia de una tarea ya instalada. `programado` y `tarea` son metadatos, no un estado en vivo del Programador de tareas.
 
-Prueba real: `python taller_repuestos/tests/respaldos.py`. Crea como máximo una copia manual, verifica rechazo de CSRF y repetición, COPY_ONLY y conservación de datos; no borra respaldos. La aplicación sigue siendo interna y sin autenticación: no exponer este botón a Internet. La cuenta de conexión necesita permisos de respaldo y verificación; no se conceden permisos adicionales automáticamente ni se aceptan rutas desde el navegador.
+La migración `012` y la instalación de la tarea no se ejecutaron durante esta preparación. La inspección de solo lectura de la instancia local encontró recuperación `SIMPLE`, `RP16_RESPALDOS` vacía, ninguna copia registrada en `msdb` y ninguna tarea **Repuesto-RespaldoAutomatico**; por tanto, no hay evidencia local de copias realmente realizadas ni de restauraciones probadas. Estos resultados describen la instancia inspeccionada y no sustituyen la comprobación en otros equipos.
 
-1. Aplicar `sql/005_respaldos.sql` después de las otras migraciones. Agrega historial y procedimiento; no borra datos ni modifica el procedimiento original del profesor.
-2. Ejecutar `scripts/instalar_respaldos.ps1` desde PowerShell. Usa autenticación de Windows y registra la tarea **Repuesto-RespaldoAutomatico** cada 30 minutos. Si la tarea ya existe se detiene, sin sobrescribirla.
-3. Ejecutar `scripts/respaldo.ps1` para la primera copia. Las siguientes ejecuciones generan un completo si no hay uno verificado en las últimas 24 horas; de lo contrario respaldan el registro de transacciones. Requiere permisos de respaldo y verificación en la instancia.
-
-Los archivos tienen fecha, hora e identificador único y se guardan en la carpeta de respaldo de la instancia, no en el proyecto. Cada archivo usa compresión, CHECKSUM y RESTORE VERIFYONLY. `RP16_RESPALDOS` conserva resultados y errores; `RP17_CONFIG_RESPALDOS` registra la instalación, no garantiza que la tarea siga habilitada. Para comprobar el estado real:
+Cuando se autorice el despliegue, aplicar `011` y después `012`, instalar la tarea con `scripts/instalar_respaldos.ps1` y comprobar su estado y el historial:
 
 ```powershell
 Get-ScheduledTask -TaskName Repuesto-RespaldoAutomatico
 Get-ScheduledTaskInfo -TaskName Repuesto-RespaldoAutomatico
-sqlcmd -S localhost -E -C -b -d TallerRepuestosDB -Q "SELECT TOP(10) inicio,fin,tipo,estado FROM dbo.RP16_RESPALDOS ORDER BY id_respaldo DESC"
+sqlcmd -S localhost -E -C -b -d TallerRepuestosDB -Q "SELECT TOP(10) inicio,fin,tipo,estado,origen,detalle FROM dbo.RP16_RESPALDOS ORDER BY id_respaldo DESC"
 ```
 
-**Instalación local:** tarea registrada y ejecución automática comprobada con resultado 0. El Agente de SQL estaba detenido y esta sesión no podía iniciarlo; por eso se utilizó el Programador de tareas de Windows. La tarea usa la sesión interactiva del usuario: necesita que Windows tenga esa sesión abierta y el servicio SQL esté activo, pero no requiere navegador ni PHP. Después de una suspensión intenta ejecutar tareas pendientes. No funciona con el equipo apagado o la sesión cerrada. Para ejecución sin sesión hace falta configurar una cuenta de servicio o el Agente con permisos de administrador; no se guardan contraseñas en scripts.
+El instalador valida que exista el procedimiento actualizado y la configuración antes de crear la tarea. La tarea de Windows usa la sesión interactiva; requiere sesión abierta y servicio SQL activo, pero no navegador ni PHP. No se ha instalado en la instancia inspeccionada. No se eliminan copias automáticamente: defina retención y almacenamiento. Una copia en el mismo equipo no protege contra pérdida del equipo/disco; se recomienda una segunda copia externa protegida. No subir `.bak` ni `.trn` a GitHub.
 
-No se eliminan copias automáticamente: un registro puede depender de archivos anteriores. Hay que definir almacenamiento y retención antes de depurarlos. Esta copia en el mismo equipo **no protege contra perder el equipo/disco**; aún se necesita una segunda copia externa protegida. No subir `.bak` ni `.trn` a GitHub. Si mueve la carpeta del proyecto, debe actualizar la ruta de la tarea. La restauración completa necesita un completo y todos los registros posteriores necesarios, incluidos los generados por cualquier otro mecanismo de respaldo.
-
-Prueba real, con permisos administrativos:
+La siguiente prueba crea y elimina una base temporal, por lo que requiere autorización y no forma parte de una auditoría de solo lectura. No se ejecutó ni se declara comprobada:
 
 ```powershell
 sqlcmd -S localhost -E -C -b -f 65001 -i '.\taller_repuestos\tests\restauracion.sql'
 ```
 
-Restaura el último completo y sus registros posteriores verificados en una base temporal con nombre único, ejecuta DBCC CHECKDB y elimina únicamente esa base temporal. Nunca reemplaza la base del negocio. Ya se comprobó localmente. VERIFYONLY valida el archivo, no sustituye esta prueba de restauración.
+El script restaura el último completo y los registros posteriores que encuentre en una base temporal, ejecuta DBCC CHECKDB y elimina esa base temporal. Es necesario verificar cuidadosamente que archivos y copias disponibles formen una cadena restaurable antes de autorizar la prueba; nunca reemplaza la base del negocio.
 
 ## Estructura de archivos
 
@@ -254,6 +258,12 @@ taller_repuestos/
   sql/006_indices_reportes.sql Índices para filtros y totales de reportes
   sql/007_historia_64_diarias.sql Carga de ~64 ventas por día hábil
   sql/008_catalogo_proveedores.sql Catálogo de repuestos por proveedor
+  sql/009_respaldos_manuales.sql Respaldo manual COPY_ONLY y control de concurrencia
+  sql/010_iva_incluido.sql  IVA incluido en compras y ventas (no modificar)
+  sql/011_data_warehouse.sql Dimensiones, hechos y ETL incremental
+  sql/012_respaldos_recuperacion.sql Control de respaldos según recuperación
+  sql/consultas_dw.sql      Consultas analíticas DW de solo lectura
+  sql/verificar_dw.sql      Verificación DW de solo lectura
   scripts/respaldo.ps1    Ejecución fuera de PHP
   scripts/instalar_respaldos.ps1 Registro de tarea de Windows
   tests/validaciones.php  Pruebas locales sin base de datos
