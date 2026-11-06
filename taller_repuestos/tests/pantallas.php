@@ -22,7 +22,10 @@ class FixtureDatabase extends PDO
         if(str_contains($query,'RP21_CONFIG_FISCAL'))return new FixtureStatement([['porcentaje'=>'13.00','tarifa_venta'=>1]]);
         if(str_contains($query,'RP20_TARIFAS_IVA'))return new FixtureStatement([['id_tarifa'=>1,'nombre'=>'IVA general','porcentaje'=>'13.00']]);
         if(str_contains($query,'RP17_CONFIG_RESPALDOS'))return new FixtureStatement([['intervalo_manual_minutos'=>5,'intervalo_completo_horas'=>24,'intervalo_registro_minutos'=>30]]);
-        if(str_contains($query,'RP16_RESPALDOS'))return new FixtureStatement($this->empty?[]:[['id_respaldo'=>1,'inicio'=>'2026-10-30 10:00:00','fin'=>'2026-10-30 10:00:01','tipo'=>'COMPLETO','estado'=>'VERIFICADO','origen'=>'MANUAL']]);
+        if(str_contains($query,'RP16_RESPALDOS'))return new FixtureStatement($this->empty?[]:[
+            ['id_respaldo'=>2,'inicio'=>'2026-10-30 10:30:00','fin'=>'2026-10-30 10:30:00','tipo'=>'REGISTRO','estado'=>'OMITIDO','origen'=>'AUTOMATICO','detalle'=>'Prueba de omisión'],
+            ['id_respaldo'=>1,'inicio'=>'2026-10-30 10:00:00','fin'=>'2026-10-30 10:00:01','tipo'=>'COMPLETO','estado'=>'VERIFICADO','origen'=>'MANUAL','detalle'=>'Archivo comprobado'],
+        ]);
         if (str_contains($query,'COUNT_BIG(*)')) return new FixtureStatement([['total'=>$this->empty?0:1,'importe'=>'5500.00']]);
         if (str_contains($query, ') partes,')) {
             return new FixtureStatement([['partes'=>4,'bajos'=>2,'vendido'=>'15000.00','clientes'=>1]]);
@@ -60,6 +63,9 @@ foreach ([true, false] as $empty) {
         }
         if ($page === 'respaldos' && (!str_contains($html, 'Respaldo de la información') || !str_contains($html, 'action="index.php?page=respaldos"'))) {
             throw new RuntimeException('La pantalla de respaldos o su formulario no se renderizaron.');
+        }
+        if ($page === 'respaldos' && !$empty && (!str_contains($html, 'Omitido (no requerido)') || !str_contains($html, 'Prueba de omisión'))) {
+            throw new RuntimeException('El historial de respaldos debe explicar las ejecuciones omitidas.');
         }
         if (in_array($page, ['ventas','compras'], true)) {
             $containerPosition=strpos($html, 'class="panel-card operations-layout operations-entry-layout"');
